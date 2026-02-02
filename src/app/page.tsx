@@ -111,11 +111,11 @@ function QuickCapture({ onAdd }: { onAdd: (text: string) => void }) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="➕ Aggiungi task veloce..."
-          className="flex-1 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          className="flex-1 bg-white/20 border border-white/30 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white focus:ring-1 focus:ring-white backdrop-blur-sm"
         />
         <button
           type="submit"
-          className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-xl font-medium transition-colors"
+          className="bg-white hover:bg-white/90 text-purple-700 px-6 py-3 rounded-xl font-medium transition-colors"
         >
           Aggiungi
         </button>
@@ -154,7 +154,7 @@ function TaskItem({
   };
 
   return (
-    <div className={`bg-white/5 rounded-xl p-4 border border-white/10 ${task.completed ? 'opacity-50' : ''}`}>
+    <div className={`bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20 ${task.completed ? 'opacity-50' : ''}`}>
       <div className="flex items-start gap-3">
         <button
           onClick={onToggle}
@@ -223,9 +223,9 @@ function KanbanColumn({
   const columnProjects = projects.filter(p => p.status === status);
   
   const statusColors = {
-    backlog: 'border-gray-500/50 bg-gray-500/10',
-    active: 'border-blue-500/50 bg-blue-500/10',
-    done: 'border-green-500/50 bg-green-500/10',
+    backlog: 'border-white/30 bg-white/10',
+    active: 'border-yellow-300/50 bg-yellow-500/10',
+    done: 'border-green-300/50 bg-green-500/10',
   };
 
   return (
@@ -239,10 +239,10 @@ function KanbanColumn({
           <div
             key={project.id}
             onClick={() => onSelectProject(selectedProjectId === project.id ? null : project.id)}
-            className={`p-3 rounded-lg cursor-pointer transition-all ${
+            className={`p-3 rounded-xl cursor-pointer transition-all backdrop-blur-sm ${
               selectedProjectId === project.id 
-                ? 'ring-2 ring-white/50 bg-white/20' 
-                : 'bg-white/5 hover:bg-white/10'
+                ? 'ring-2 ring-white bg-white/30' 
+                : 'bg-white/10 hover:bg-white/20'
             }`}
             style={{ borderLeft: `4px solid ${project.color}` }}
           >
@@ -640,27 +640,27 @@ export default function Home() {
     <main 
       className="min-h-screen text-white"
       style={{ 
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 50%, #667eea 100%)',
       }}
     >
       {/* Header */}
-      <header className="border-b border-white/10 bg-black/20 backdrop-blur-sm sticky top-0 z-30">
+      <header className="border-b border-white/20 bg-white/10 backdrop-blur-sm sticky top-0 z-30">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold">📋 Task Manager</h1>
-              <p className="text-sm text-gray-400">Virgilio Maretto</p>
+              <h1 className="text-2xl font-bold">⚡ SwitchBoard</h1>
+              <p className="text-sm text-white/70">Task & Projects</p>
             </div>
             <div className="flex gap-2">
               <button
                 onClick={() => setShowAddTask(true)}
-                className="bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded-lg text-sm font-medium"
+                className="bg-white/20 hover:bg-white/30 border border-white/30 px-4 py-2 rounded-xl text-sm font-medium backdrop-blur-sm"
               >
                 + Task
               </button>
               <button
                 onClick={() => setShowAddProject(true)}
-                className="bg-purple-500 hover:bg-purple-600 px-4 py-2 rounded-lg text-sm font-medium"
+                className="bg-white hover:bg-white/90 text-purple-700 px-4 py-2 rounded-xl text-sm font-medium"
               >
                 + Progetto
               </button>
@@ -669,38 +669,38 @@ export default function Home() {
           
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3 mt-4">
-            <div className="bg-white/5 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-blue-400">{totalTasks - completedTasks}</div>
-              <div className="text-xs text-gray-400">Da fare</div>
+            <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 text-center border border-white/20">
+              <div className="text-2xl font-bold text-white">{totalTasks - completedTasks}</div>
+              <div className="text-xs text-white/70">Da fare</div>
             </div>
-            <div className="bg-white/5 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-red-400">{highPriorityTasks}</div>
-              <div className="text-xs text-gray-400">Priorità alta</div>
+            <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 text-center border border-white/20">
+              <div className="text-2xl font-bold text-yellow-300">{highPriorityTasks}</div>
+              <div className="text-xs text-white/70">Priorità alta</div>
             </div>
-            <div className="bg-white/5 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-green-400">{completedTasks}</div>
-              <div className="text-xs text-gray-400">Completati</div>
+            <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 text-center border border-white/20">
+              <div className="text-2xl font-bold text-green-300">{completedTasks}</div>
+              <div className="text-xs text-white/70">Completati</div>
             </div>
           </div>
         </div>
       </header>
 
       {/* Tab Navigation */}
-      <nav className="border-b border-white/10 bg-black/10">
+      <nav className="border-b border-white/20 bg-white/5">
         <div className="max-w-4xl mx-auto px-4">
           <div className="flex gap-4 py-3">
             <button
               onClick={() => setActiveTab('tasks')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                activeTab === 'tasks' ? 'bg-white/20 text-white' : 'text-gray-400 hover:text-white'
+              className={`px-4 py-2 rounded-xl font-medium transition-colors ${
+                activeTab === 'tasks' ? 'bg-white text-purple-700' : 'text-white/70 hover:text-white hover:bg-white/10'
               }`}
             >
               ✅ Task
             </button>
             <button
               onClick={() => setActiveTab('projects')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                activeTab === 'projects' ? 'bg-white/20 text-white' : 'text-gray-400 hover:text-white'
+              className={`px-4 py-2 rounded-xl font-medium transition-colors ${
+                activeTab === 'projects' ? 'bg-white text-purple-700' : 'text-white/70 hover:text-white hover:bg-white/10'
               }`}
             >
               📊 Progetti
