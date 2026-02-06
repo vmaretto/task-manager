@@ -1,117 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-
-// ============================================
-// TYPES
-// ============================================
-interface Task {
-  id: string;
-  text: string;
-  notes: string;
-  projectId: string | null;
-  priority: 'high' | 'medium' | 'low';
-  dueDate: string | null;
-  category: 'work' | 'admin' | 'personal' | 'travel';
-  completed: boolean;
-  createdAt: string;
-}
-
-interface Project {
-  id: string;
-  name: string;
-  status: 'backlog' | 'active' | 'done';
-  color: string;
-  emoji: string;
-  description: string;
-}
-
-// ============================================
-// INITIAL DATA - Aggiornato 06/02/2026
-// ============================================
-const initialProjects: Project[] = [
-  { id: 'master-cf', name: 'Master Carbon Farming', status: 'active', color: '#10b981', emoji: '🌱', description: 'Direttore Operativo - Università della Tuscia' },
-  { id: 'switch', name: 'SWITCH', status: 'active', color: '#3b82f6', emoji: '🇪🇺', description: 'Horizon Europe - Food Hub' },
-  { id: 'posti', name: 'POSTI', status: 'active', color: '#8b5cf6', emoji: '⛓️', description: 'Piattaforma tracciabilità blockchain' },
-  { id: 'a-grid', name: 'A-GRID', status: 'backlog', color: '#f59e0b', emoji: '🌍', description: 'Carbon farming Emirati - con Guido Mercati' },
-  { id: 'consiglio-cibo', name: 'Consiglio del Cibo Roma', status: 'active', color: '#ec4899', emoji: '🏛️', description: 'Membro consiglio' },
-  { id: 'its', name: 'ITS Docenza', status: 'active', color: '#06b6d4', emoji: '🎓', description: 'ITS Firenze + ITS Latina' },
-  { id: 'peroni', name: 'Birra Peroni / BEST', status: 'active', color: '#eab308', emoji: '🍺', description: 'Manutenzione + evoluzione BEST' },
-  { id: 'olio-roma', name: 'Consorzio Olio di Roma', status: 'backlog', color: '#84cc16', emoji: '🫒', description: 'Monitoraggio e verifica etichette' },
-  { id: 'life', name: 'LIFE Food4Choice', status: 'active', color: '#f43f5e', emoji: '🍎', description: 'Progetto EU LIFE - App riconoscimento cibo' },
-  { id: 'tolfa', name: 'Terra Mia Tolfa', status: 'active', color: '#a855f7', emoji: '🏡', description: 'Valorizzazione territoriale Comune di Tolfa' },
-];
-
-const initialTasks: Task[] = [
-  // === URGENTI ===
-  { id: '1', text: 'Convenzione RS Management (Master CF)', notes: 'URGENTE - Da completare prima della conferenza stampa', projectId: 'master-cf', priority: 'high', dueDate: '2026-02-18', category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '2', text: 'Conferenza stampa 18/02 — confermare con Nascenzo + INAIL', notes: '', projectId: 'master-cf', priority: 'high', dueDate: '2026-02-18', category: 'work', completed: false, createdAt: '2026-02-06' },
-  
-  // === TASK DEL 06/02/2026 ===
-  { id: '10', text: 'Far inviare inviti dalla mail di Valentini a Porsia e Katia', notes: '', projectId: 'master-cf', priority: 'high', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '11', text: 'Rispondere alle mail degli studenti', notes: '', projectId: 'master-cf', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '12', text: 'Sentire Cruciani per patrocinio Comune di Roma', notes: '', projectId: 'master-cf', priority: 'high', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '13', text: 'Sentire Passerini (dopo call Value for Food) per altre partnership Master', notes: '', projectId: 'master-cf', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '14', text: 'Verificare se invitare Sara Roversi (Future Food Institute)', notes: '', projectId: 'master-cf', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '15', text: 'Verificare se invitare presidente/rappresentante Unionfood', notes: '', projectId: 'master-cf', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '16', text: 'Pagare fatture Tolfa', notes: 'Terra Mia', projectId: 'tolfa', priority: 'high', dueDate: null, category: 'admin', completed: false, createdAt: '2026-02-06' },
-  { id: '17', text: 'Firmare documenti LIFE', notes: 'Food4Choice', projectId: 'life', priority: 'high', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '18', text: 'Fattura CREA + DURC', notes: '', projectId: null, priority: 'high', dueDate: null, category: 'admin', completed: false, createdAt: '2026-02-06' },
-  { id: '19', text: 'Invitare Istituto Agrario + Ferraiolo', notes: 'Per conferenza stampa/Master', projectId: 'master-cf', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '20', text: 'Verificare altre aziende Consiglio del Cibo per inviti/partnership', notes: 'Roma', projectId: 'consiglio-cibo', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  
-  // === PARTNER MASTER DA CHIUDERE ===
-  { id: '30', text: 'Partner Master: Barilla', notes: '', projectId: 'master-cf', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '31', text: 'Partner Master: Arsial', notes: '', projectId: 'master-cf', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '32', text: 'Partner Master: Comune Roma', notes: '', projectId: 'master-cf', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '33', text: 'Partner Master: Banca Intesa', notes: '', projectId: 'master-cf', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '34', text: 'Partner Master: Bonifiche Ferraresi', notes: '', projectId: 'master-cf', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '35', text: 'Partner Master: Ferrero', notes: '', projectId: 'master-cf', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  { id: '36', text: 'Partner Master: Orta', notes: '', projectId: 'master-cf', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-06' },
-  
-  // === ALTRI TASK PRECEDENTI ===
-  { id: '40', text: 'Email a Luigi Saviolo — introdurre Luca Bonacore', notes: '', projectId: null, priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-01' },
-  { id: '41', text: 'Email a Giuseppe Peccentino — Master Carbon Farming', notes: '', projectId: 'master-cf', priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-01' },
-  { id: '42', text: 'Firmare contratto CREA', notes: '', projectId: null, priority: 'high', dueDate: null, category: 'work', completed: false, createdAt: '2026-02-02' },
-  { id: '43', text: 'Chiamare Nathan', notes: '', projectId: null, priority: 'medium', dueDate: null, category: 'work', completed: false, createdAt: '2026-01-31' },
-  { id: '44', text: 'Scrivere all\'AMA — rivedere multa ufficio', notes: '', projectId: null, priority: 'low', dueDate: null, category: 'admin', completed: false, createdAt: '2026-01-31' },
-  { id: '45', text: 'Inarcassa — pagare assicurazione', notes: '', projectId: null, priority: 'medium', dueDate: null, category: 'admin', completed: false, createdAt: '2026-01-31' },
-  { id: '46', text: 'Ringraziare Katia (cena Ambasciata Svizzera)', notes: '', projectId: null, priority: 'low', dueDate: null, category: 'personal', completed: false, createdAt: '2026-01-30' },
-];
-
-// ============================================
-// HOOKS
-// ============================================
-function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((prev: T) => T)) => void] {
-  const [storedValue, setStoredValue] = useState<T>(initialValue);
-  const [isClient, setIsClient] = useState(false);
-
-  useEffect(() => {
-    setIsClient(true);
-    try {
-      const item = window.localStorage.getItem(key);
-      if (item) {
-        setStoredValue(JSON.parse(item));
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  }, [key]);
-
-  const setValue = useCallback((value: T | ((prev: T) => T)) => {
-    try {
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      setStoredValue(valueToStore);
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(key, JSON.stringify(valueToStore));
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  }, [key, storedValue]);
-
-  return [storedValue, setValue];
-}
+import { supabase, Task, Project, getTasks, getProjects, addTask, updateTask, deleteTask, addProject, updateProject } from '../lib/supabase';
 
 // ============================================
 // COMPONENTS
@@ -162,7 +52,7 @@ function TaskItem({
   onDelete: () => void;
   onEdit: () => void;
 }) {
-  const project = projects.find(p => p.id === task.projectId);
+  const project = projects.find(p => p.id === task.project_id);
   
   const priorityColors = {
     high: 'bg-red-500/30 text-red-300 border-red-500/50',
@@ -180,7 +70,6 @@ function TaskItem({
   return (
     <div className={`bg-slate-800 rounded-xl p-4 border-2 ${task.completed ? 'opacity-50 border-slate-700' : 'border-slate-600'} shadow-lg`}>
       <div className="flex items-start gap-3">
-        {/* Checkbox - MOLTO più visibile */}
         <button
           onClick={onToggle}
           className={`mt-0.5 w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${
@@ -197,7 +86,6 @@ function TaskItem({
             {task.text}
           </div>
           
-          {/* Notes */}
           {task.notes && (
             <div className="text-sm text-slate-400 mt-1 italic">
               📝 {task.notes}
@@ -220,15 +108,14 @@ function TaskItem({
               </span>
             )}
             
-            {task.dueDate && (
+            {task.due_date && (
               <span className="text-xs text-slate-400 bg-slate-700 px-2 py-1 rounded-md">
-                📅 {new Date(task.dueDate).toLocaleDateString('it-IT')}
+                📅 {new Date(task.due_date).toLocaleDateString('it-IT')}
               </span>
             )}
           </div>
         </div>
         
-        {/* Action buttons */}
         <div className="flex gap-1 flex-shrink-0">
           <button
             onClick={onEdit}
@@ -297,7 +184,6 @@ function KanbanColumn({
             </div>
             <p className="text-xs text-slate-400 mt-1 line-clamp-2">{project.description}</p>
             
-            {/* Move buttons */}
             <div className="flex gap-1 mt-2">
               {status !== 'backlog' && (
                 <button
@@ -357,8 +243,8 @@ function EditTaskModal({
       setNotes(task.notes || '');
       setPriority(task.priority);
       setCategory(task.category);
-      setProjectId(task.projectId);
-      setDueDate(task.dueDate || '');
+      setProjectId(task.project_id);
+      setDueDate(task.due_date || '');
     }
   }, [task]);
 
@@ -372,8 +258,8 @@ function EditTaskModal({
         notes: notes.trim(),
         priority,
         category,
-        projectId,
-        dueDate: dueDate || null,
+        project_id: projectId,
+        due_date: dueDate || null,
       });
       onClose();
     }
@@ -394,7 +280,6 @@ function EditTaskModal({
               type="text"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Cosa devi fare?"
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
               autoFocus
             />
@@ -405,7 +290,6 @@ function EditTaskModal({
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Aggiungi note, dettagli, link..."
               rows={3}
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 resize-none"
             />
@@ -493,7 +377,7 @@ function AddTaskModal({
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
-  onAdd: (task: Omit<Task, 'id' | 'createdAt' | 'completed'>) => void;
+  onAdd: (task: Omit<Task, 'id' | 'created_at'>) => void;
   projects: Project[];
 }) {
   const [text, setText] = useState('');
@@ -513,8 +397,9 @@ function AddTaskModal({
         notes: notes.trim(),
         priority,
         category,
-        projectId,
-        dueDate: dueDate || null,
+        project_id: projectId,
+        due_date: dueDate || null,
+        completed: false,
       });
       setText('');
       setNotes('');
@@ -548,11 +433,11 @@ function AddTaskModal({
           </div>
           
           <div>
-            <label className="block text-sm text-slate-300 mb-1 font-medium">📝 Note (opzionale)</label>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">📝 Note</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Aggiungi note, dettagli, link..."
+              placeholder="Dettagli opzionali..."
               rows={2}
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 resize-none"
             />
@@ -588,7 +473,7 @@ function AddTaskModal({
           </div>
           
           <div>
-            <label className="block text-sm text-slate-300 mb-1 font-medium">Progetto (opzionale)</label>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Progetto</label>
             <select
               value={projectId || ''}
               onChange={(e) => setProjectId(e.target.value || null)}
@@ -602,7 +487,7 @@ function AddTaskModal({
           </div>
           
           <div>
-            <label className="block text-sm text-slate-300 mb-1 font-medium">Scadenza (opzionale)</label>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Scadenza</label>
             <input
               type="date"
               value={dueDate}
@@ -760,8 +645,9 @@ function AddProjectModal({
 // ============================================
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'tasks' | 'projects'>('tasks');
-  const [tasks, setTasks] = useLocalStorage<Task[]>('vm-tasks-v2', initialTasks);
-  const [projects, setProjects] = useLocalStorage<Project[]>('vm-projects-v2', initialProjects);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showAddProject, setShowAddProject] = useState(false);
@@ -769,80 +655,94 @@ export default function Home() {
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('active');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
+  // Load data from Supabase
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      const [tasksData, projectsData] = await Promise.all([
+        getTasks(),
+        getProjects()
+      ]);
+      setTasks(tasksData);
+      setProjects(projectsData);
+      setLoading(false);
+    }
+    loadData();
+  }, []);
+
   // Quick add task
-  const handleQuickAdd = (text: string) => {
-    const newTask: Task = {
-      id: Date.now().toString(),
+  const handleQuickAdd = async (text: string) => {
+    const newTask = await addTask({
       text,
       notes: '',
-      projectId: selectedProjectId,
+      project_id: selectedProjectId,
       priority: 'medium',
-      dueDate: null,
+      due_date: null,
       category: 'work',
       completed: false,
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-    setTasks(prev => [newTask, ...prev]);
+    });
+    if (newTask) {
+      setTasks(prev => [newTask, ...prev]);
+    }
   };
 
   // Add task with details
-  const handleAddTask = (taskData: Omit<Task, 'id' | 'createdAt' | 'completed'>) => {
-    const newTask: Task = {
-      ...taskData,
-      id: Date.now().toString(),
-      completed: false,
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-    setTasks(prev => [newTask, ...prev]);
+  const handleAddTask = async (taskData: Omit<Task, 'id' | 'created_at'>) => {
+    const newTask = await addTask(taskData);
+    if (newTask) {
+      setTasks(prev => [newTask, ...prev]);
+    }
   };
 
   // Toggle task completion
-  const handleToggleTask = (taskId: string) => {
-    setTasks(prev => prev.map(t => 
-      t.id === taskId ? { ...t, completed: !t.completed } : t
-    ));
+  const handleToggleTask = async (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (task) {
+      const updated = await updateTask(taskId, { completed: !task.completed });
+      if (updated) {
+        setTasks(prev => prev.map(t => t.id === taskId ? updated : t));
+      }
+    }
   };
 
   // Delete task
-  const handleDeleteTask = (taskId: string) => {
-    setTasks(prev => prev.filter(t => t.id !== taskId));
+  const handleDeleteTask = async (taskId: string) => {
+    const success = await deleteTask(taskId);
+    if (success) {
+      setTasks(prev => prev.filter(t => t.id !== taskId));
+    }
   };
 
   // Update task
-  const handleUpdateTask = (taskId: string, updates: Partial<Task>) => {
-    setTasks(prev => prev.map(t => 
-      t.id === taskId ? { ...t, ...updates } : t
-    ));
+  const handleUpdateTask = async (taskId: string, updates: Partial<Task>) => {
+    const updated = await updateTask(taskId, updates);
+    if (updated) {
+      setTasks(prev => prev.map(t => t.id === taskId ? updated : t));
+    }
   };
 
   // Add project
-  const handleAddProject = (projectData: Omit<Project, 'id'>) => {
-    const newProject: Project = {
-      ...projectData,
-      id: Date.now().toString(),
-    };
-    setProjects(prev => [...prev, newProject]);
+  const handleAddProject = async (projectData: Omit<Project, 'id'>) => {
+    const newProject = await addProject(projectData);
+    if (newProject) {
+      setProjects(prev => [...prev, newProject]);
+    }
   };
 
   // Move project to different status
-  const handleMoveProject = (projectId: string, newStatus: 'backlog' | 'active' | 'done') => {
-    setProjects(prev => prev.map(p => 
-      p.id === projectId ? { ...p, status: newStatus } : p
-    ));
+  const handleMoveProject = async (projectId: string, newStatus: 'backlog' | 'active' | 'done') => {
+    const updated = await updateProject(projectId, { status: newStatus });
+    if (updated) {
+      setProjects(prev => prev.map(p => p.id === projectId ? updated : p));
+    }
   };
 
   // Filter tasks
   const filteredTasks = tasks.filter(task => {
-    // Filter by completion status
     if (filter === 'active' && task.completed) return false;
     if (filter === 'completed' && !task.completed) return false;
-    
-    // Filter by project
-    if (selectedProjectId && task.projectId !== selectedProjectId) return false;
-    
-    // Filter by category
+    if (selectedProjectId && task.project_id !== selectedProjectId) return false;
     if (categoryFilter !== 'all' && task.category !== categoryFilter) return false;
-    
     return true;
   });
 
@@ -857,6 +757,17 @@ export default function Home() {
   const completedTasks = tasks.filter(t => t.completed).length;
   const highPriorityTasks = tasks.filter(t => !t.completed && t.priority === 'high').length;
 
+  if (loading) {
+    return (
+      <main className="min-h-screen text-white bg-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-4">⏳</div>
+          <p className="text-slate-400">Caricamento...</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen text-white bg-slate-900">
       {/* Header */}
@@ -865,7 +776,7 @@ export default function Home() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-white">⚡ SwitchBoard</h1>
-              <p className="text-sm text-slate-400">Task & Projects</p>
+              <p className="text-sm text-slate-400">Task & Projects • Supabase</p>
             </div>
             <div className="flex gap-2">
               <button
@@ -928,10 +839,8 @@ export default function Home() {
       {/* Content */}
       <div className="max-w-4xl mx-auto px-4 py-6">
         
-        {/* TASKS TAB */}
         {activeTab === 'tasks' && (
           <div>
-            {/* Quick Capture */}
             <QuickCapture onAdd={handleQuickAdd} />
             
             {/* Filters */}
@@ -997,7 +906,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* PROJECTS TAB (KANBAN) */}
         {activeTab === 'projects' && (
           <div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
