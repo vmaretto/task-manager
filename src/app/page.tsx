@@ -48,10 +48,11 @@ function TaskItem({
 }: { 
   task: Task; 
   projects: Project[];
-  onToggle: () => void; 
+  onToggle: () => void | Promise<void>; 
   onDelete: () => void;
   onEdit: () => void;
 }) {
+  const [isToggling, setIsToggling] = useState(false);
   const project = projects.find(p => p.id === task.project_id);
   
   const priorityColors = {
@@ -67,19 +68,37 @@ function TaskItem({
     travel: '✈️',
   };
 
+  const handleToggle = async () => {
+    if (isToggling) return; // Prevent double-clicks
+    setIsToggling(true);
+    await onToggle();
+    setIsToggling(false);
+  };
+
   return (
     <div className={`bg-slate-800 rounded-xl p-4 border-2 ${task.completed ? 'opacity-50 border-slate-700' : 'border-slate-600'} shadow-lg`}>
       <div className="flex items-start gap-3">
-        <button
-          onClick={onToggle}
-          className={`mt-0.5 w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-            task.completed 
-              ? 'bg-green-500 border-green-500 text-white' 
-              : 'border-white bg-transparent hover:border-green-400 hover:bg-green-500/20'
-          }`}
+        {/* Larger tap target wrapper */}
+        <div 
+          onClick={handleToggle}
+          className="p-2 -m-2 cursor-pointer flex-shrink-0"
         >
-          {task.completed && <span className="text-sm font-bold">✓</span>}
-        </button>
+          <div
+            className={`w-8 h-8 rounded-lg border-3 flex items-center justify-center transition-all ${
+              isToggling 
+                ? 'bg-yellow-500 border-yellow-500 animate-pulse'
+                : task.completed 
+                  ? 'bg-green-500 border-green-500 text-white' 
+                  : 'border-white border-2 bg-transparent hover:border-green-400 hover:bg-green-500/20 active:bg-green-500/40'
+            }`}
+          >
+            {isToggling ? (
+              <span className="text-lg">⏳</span>
+            ) : task.completed ? (
+              <span className="text-lg font-bold">✓</span>
+            ) : null}
+          </div>
+        </div>
         
         <div className="flex-1 min-w-0">
           <div className={`text-white font-medium ${task.completed ? 'line-through text-slate-500' : ''}`}>
