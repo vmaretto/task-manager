@@ -1,18 +1,12 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Task Manager | Virgilio Maretto",
   description: "Gestione task e progetti",
   manifest: "/manifest.json",
-};
-
-export const viewport: Viewport = {
   themeColor: "#0f172a",
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no",
 };
 
 export default function RootLayout({
