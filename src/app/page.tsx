@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { supabase, Task, Project, getTasks, getProjects, addTask, updateTask, deleteTask, addProject, updateProject } from '../lib/supabase';
+import { useState, useEffect } from 'react';
+import { Task, Project, getTasks, getProjects, addTask, updateTask, deleteTask, addProject, updateProject } from '../lib/supabase';
+import { AdminAnalysisView } from '../components/AdminAnalysisView';
 
 // ============================================
 // COMPONENTS
@@ -256,8 +257,10 @@ function EditTaskModal({
   const [projectId, setProjectId] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState('');
 
+  // Keep modal form fields in sync when a task is opened for editing.
   useEffect(() => {
     if (task) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setText(task.text);
       setNotes(task.notes || '');
       setPriority(task.priority);
@@ -663,7 +666,7 @@ function AddProjectModal({
 // MAIN APP
 // ============================================
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'tasks' | 'projects'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'projects' | 'admin'>('tasks');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -851,6 +854,14 @@ export default function Home() {
             >
               📊 Progetti
             </button>
+            <button
+              onClick={() => setActiveTab('admin')}
+              className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
+                activeTab === 'admin' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              🧾 Amministrazione
+            </button>
           </div>
         </div>
       </nav>
@@ -964,6 +975,8 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {activeTab === 'admin' && <AdminAnalysisView />}
       </div>
 
       {/* Modals */}
