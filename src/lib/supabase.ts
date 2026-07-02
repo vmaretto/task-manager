@@ -516,6 +516,27 @@ export async function addProject(project: Omit<Project, 'id'>): Promise<Project 
   }
 }
 
+export async function deleteProject(id: string): Promise<boolean> {
+  const mode = await detectBackendMode();
+
+  if (mode === 'local') {
+    writeProjectsLocal(readProjectsLocal().filter((p) => p.id !== id));
+    queueOperation({ entity: 'project', type: 'delete', id });
+    return true;
+  }
+
+  try {
+    const { error } = await supabase!.from('projects').delete().eq('id', id);
+    if (error) throw error;
+    writeProjectsLocal(readProjectsLocal().filter((p) => p.id !== id));
+    return true;
+  } catch (error) {
+    console.error('Error deleting project, falling back to local mode:', error);
+    setLocalMode();
+    return deleteProject(id);
+  }
+}
+
 export async function updateProject(id: string, updates: Partial<Project>): Promise<Project | null> {
   const mode = await detectBackendMode();
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Task, Project, getTasks, getProjects, addTask, updateTask, deleteTask, addProject, updateProject, getBackendMode, getSyncStatus, syncPendingChanges } from '../lib/supabase';
+import { Task, Project, getTasks, getProjects, addTask, updateTask, deleteTask, addProject, updateProject, deleteProject, getBackendMode, getSyncStatus, syncPendingChanges } from '../lib/supabase';
 
 // ============================================
 // COMPONENTS
@@ -655,12 +655,14 @@ function EditProjectModal({
   isOpen,
   onClose,
   project,
-  onSave
+  onSave,
+  onDelete
 }: {
   isOpen: boolean;
   onClose: () => void;
   project: Project | null;
   onSave: (projectId: string, updates: Partial<Project>) => void;
+  onDelete: (projectId: string) => void;
 }) {
   const initial = project ?? { id: '', name: '', description: '', emoji: '📁', color: '#3b82f6', status: 'backlog' as const };
   const [name, setName] = useState(initial.name);
@@ -723,6 +725,13 @@ function EditProjectModal({
             <button type="button" onClick={onClose} className="flex-1 px-4 py-3 bg-slate-600 hover:bg-slate-500 rounded-lg font-semibold">Annulla</button>
             <button type="submit" className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold">💾 Salva</button>
           </div>
+          <button
+            type="button"
+            onClick={() => { if (confirm(`Eliminare il progetto "${project.name}"? I task associati non verranno eliminati.`)) { onDelete(project.id); onClose(); } }}
+            className="w-full mt-3 px-4 py-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded-lg text-sm font-medium border border-red-500/30"
+          >
+            🗑️ Elimina progetto
+          </button>
         </form>
       </div>
     </div>
@@ -1004,6 +1013,16 @@ export default function Home() {
     const updated = await updateProject(projectId, updates);
     if (updated) {
       setProjects(prev => prev.map(p => p.id === projectId ? updated : p));
+      refreshSyncStatus();
+    }
+  };
+
+  // Delete project
+  const handleDeleteProject = async (projectId: string) => {
+    const success = await deleteProject(projectId);
+    if (success) {
+      setProjects(prev => prev.filter(p => p.id !== projectId));
+      if (selectedProjectId === projectId) setSelectedProjectId(null);
       refreshSyncStatus();
     }
   };
@@ -1359,6 +1378,7 @@ export default function Home() {
         onClose={() => setEditingProject(null)}
         project={editingProject}
         onSave={handleUpdateProject}
+        onDelete={handleDeleteProject}
       />
 
       <EditTaskModal
