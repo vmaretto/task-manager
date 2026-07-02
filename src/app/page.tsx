@@ -175,19 +175,21 @@ function TaskItem({
   );
 }
 
-function KanbanColumn({ 
-  title, 
+function KanbanColumn({
+  title,
   status,
-  projects, 
+  projects,
   onMoveProject,
   onSelectProject,
+  onEditProject,
   selectedProjectId
-}: { 
+}: {
   title: string;
   status: 'backlog' | 'active' | 'done';
   projects: Project[];
   onMoveProject: (projectId: string, newStatus: 'backlog' | 'active' | 'done') => void;
   onSelectProject: (projectId: string | null) => void;
+  onEditProject: (project: Project) => void;
   selectedProjectId: string | null;
 }) {
   const columnProjects = projects.filter(p => p.status === status);
@@ -216,12 +218,21 @@ function KanbanColumn({
             }`}
             style={{ borderLeft: `4px solid ${project.color}` }}
           >
-            <div className="flex items-center gap-2">
-              <span>{project.emoji}</span>
-              <span className="font-medium text-sm text-white">{project.name}</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span>{project.emoji}</span>
+                <span className="font-medium text-sm text-white">{project.name}</span>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); onEditProject(project); }}
+                className="text-slate-400 hover:text-blue-400 p-1 rounded transition-colors"
+                title="Modifica progetto"
+              >
+                ✏️
+              </button>
             </div>
             <p className="text-xs text-slate-400 mt-1 line-clamp-2">{project.description}</p>
-            
+
             <div className="flex gap-1 mt-2">
               {status !== 'backlog' && (
                 <button
@@ -637,6 +648,84 @@ function AddTaskModal({
   );
 }
 
+function EditProjectModal({
+  isOpen,
+  onClose,
+  project,
+  onSave
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  project: Project | null;
+  onSave: (projectId: string, updates: Partial<Project>) => void;
+}) {
+  const initial = project ?? { id: '', name: '', description: '', emoji: '📁', color: '#3b82f6', status: 'backlog' as const };
+  const [name, setName] = useState(initial.name);
+  const [description, setDescription] = useState(initial.description);
+  const [emoji, setEmoji] = useState(initial.emoji);
+  const [color, setColor] = useState(initial.color);
+  const [status, setStatus] = useState(initial.status);
+
+  if (!isOpen || !project) return null;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (name.trim()) {
+      onSave(project.id, { name: name.trim(), description: description.trim(), emoji, color, status });
+      onClose();
+    }
+  };
+
+  const colors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+  const emojis = ['📁', '🚀', '💡', '🎯', '📊', '🔧', '🌱', '⭐', '🔬', '📱', '🇪🇺', '🌍', '🍎', '🏡', '⚠️', '🎓', '🍺', '🫒', '🍕'];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onClose}>
+      <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border-2 border-slate-600 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h3 className="text-xl font-bold mb-4 text-white">✏️ Modifica Progetto</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Nome</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" autoFocus />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Descrizione</label>
+            <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none" />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Stato</label>
+            <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none">
+              <option value="backlog">📥 Backlog</option>
+              <option value="active">🔄 In Corso</option>
+              <option value="done">✅ Completato</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-2 font-medium">Emoji</label>
+            <div className="flex flex-wrap gap-2">
+              {emojis.map(e => (
+                <button key={e} type="button" onClick={() => setEmoji(e)} className={`w-10 h-10 rounded-lg text-xl flex items-center justify-center ${emoji === e ? 'bg-slate-600 ring-2 ring-white' : 'bg-slate-700 hover:bg-slate-600'}`}>{e}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-2 font-medium">Colore</label>
+            <div className="flex flex-wrap gap-2">
+              {colors.map(c => (
+                <button key={c} type="button" onClick={() => setColor(c)} className={`w-8 h-8 rounded-full ${color === c ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800' : ''}`} style={{ backgroundColor: c }} />
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-3 bg-slate-600 hover:bg-slate-500 rounded-lg font-semibold">Annulla</button>
+            <button type="submit" className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold">💾 Salva</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function AddProjectModal({ 
   isOpen, 
   onClose, 
@@ -772,6 +861,7 @@ export default function Home() {
   const [showAddTask, setShowAddTask] = useState(false);
   const [showAddProject, setShowAddProject] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('active');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [backendMode, setBackendMode] = useState<'remote' | 'local'>('remote');
@@ -900,6 +990,15 @@ export default function Home() {
     const newProject = await addProject(projectData);
     if (newProject) {
       setProjects(prev => [...prev, newProject]);
+      refreshSyncStatus();
+    }
+  };
+
+  // Update project
+  const handleUpdateProject = async (projectId: string, updates: Partial<Project>) => {
+    const updated = await updateProject(projectId, updates);
+    if (updated) {
+      setProjects(prev => prev.map(p => p.id === projectId ? updated : p));
       refreshSyncStatus();
     }
   };
@@ -1073,17 +1172,17 @@ export default function Home() {
                 <option value="personal">👤 Personale</option>
                 <option value="travel">✈️ Viaggio</option>
               </select>
-              
-              {selectedProjectId && (
-                <button
-                  onClick={() => setSelectedProjectId(null)}
-                  className="bg-blue-500/20 text-blue-400 border-2 border-blue-500/40 px-3 py-1 rounded-lg text-sm flex items-center gap-1 font-medium"
-                >
-                  {projects.find(p => p.id === selectedProjectId)?.emoji} 
-                  {projects.find(p => p.id === selectedProjectId)?.name}
-                  <span className="ml-1">×</span>
-                </button>
-              )}
+
+              <select
+                value={selectedProjectId || ''}
+                onChange={(e) => setSelectedProjectId(e.target.value || null)}
+                className="bg-slate-800 border-2 border-slate-700 rounded-lg px-3 py-1 text-sm font-medium focus:outline-none text-white"
+              >
+                <option value="">Tutti i progetti</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
+                ))}
+              </select>
             </div>
             
             {/* Task List */}
@@ -1121,6 +1220,7 @@ export default function Home() {
                   setSelectedProjectId(id);
                   if (id) setActiveTab('tasks');
                 }}
+                onEditProject={setEditingProject}
                 selectedProjectId={selectedProjectId}
               />
               <KanbanColumn
@@ -1132,6 +1232,7 @@ export default function Home() {
                   setSelectedProjectId(id);
                   if (id) setActiveTab('tasks');
                 }}
+                onEditProject={setEditingProject}
                 selectedProjectId={selectedProjectId}
               />
               <KanbanColumn
@@ -1143,6 +1244,7 @@ export default function Home() {
                   setSelectedProjectId(id);
                   if (id) setActiveTab('tasks');
                 }}
+                onEditProject={setEditingProject}
                 selectedProjectId={selectedProjectId}
               />
             </div>
@@ -1164,6 +1266,14 @@ export default function Home() {
         onAdd={handleAddProject}
       />
       
+      <EditProjectModal
+        key={editingProject?.id ?? 'edit-project'}
+        isOpen={!!editingProject}
+        onClose={() => setEditingProject(null)}
+        project={editingProject}
+        onSave={handleUpdateProject}
+      />
+
       <EditTaskModal
         key={editingTask?.id ?? 'edit-task'}
         isOpen={!!editingTask}
