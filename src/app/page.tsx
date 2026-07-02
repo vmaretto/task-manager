@@ -864,6 +864,8 @@ export default function Home() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('active');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'list' | 'grouped'>('list');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [backendMode, setBackendMode] = useState<'remote' | 'local'>('remote');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
@@ -1183,17 +1185,32 @@ export default function Home() {
                   <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
                 ))}
               </select>
+
+              <div className="flex bg-slate-800 rounded-lg p-1 border-2 border-slate-700">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                  Lista
+                </button>
+                <button
+                  onClick={() => setViewMode('grouped')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === 'grouped' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                  Per progetto
+                </button>
+              </div>
             </div>
-            
+
             {/* Task List */}
-            <div className="space-y-3">
-              {sortedTasks.length === 0 ? (
-                <div className="text-center py-12 text-slate-500">
-                  <div className="text-4xl mb-4">🎉</div>
-                  <p>Nessun task da mostrare!</p>
-                </div>
-              ) : (
-                sortedTasks.map(task => (
+            {sortedTasks.length === 0 ? (
+              <div className="text-center py-12 text-slate-500">
+                <div className="text-4xl mb-4">🎉</div>
+                <p>Nessun task da mostrare!</p>
+              </div>
+            ) : viewMode === 'list' ? (
+              <div className="space-y-3">
+                {sortedTasks.map(task => (
                   <TaskItem
                     key={task.id}
                     task={task}
@@ -1202,9 +1219,64 @@ export default function Home() {
                     onDelete={() => handleDeleteTask(task.id)}
                     onEdit={() => setEditingTask(task)}
                   />
-                ))
-              )}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {(() => {
+                  const groups: { key: string; label: string; emoji: string; color: string; tasks: Task[] }[] = [];
+                  const byProject = new Map<string | null, Task[]>();
+                  for (const t of sortedTasks) {
+                    const arr = byProject.get(t.project_id) ?? [];
+                    arr.push(t);
+                    byProject.set(t.project_id, arr);
+                  }
+                  for (const p of projects) {
+                    const pts = byProject.get(p.id);
+                    if (pts?.length) groups.push({ key: p.id, label: p.name, emoji: p.emoji, color: p.color, tasks: pts });
+                  }
+                  const noProject = byProject.get(null);
+                  if (noProject?.length) groups.push({ key: '__none__', label: 'Senza progetto', emoji: '📋', color: '#64748b', tasks: noProject });
+                  return groups.map(g => {
+                    const isOpen = expandedGroups.has(g.key);
+                    return (
+                      <div key={g.key} className="rounded-xl border-2 border-slate-700 overflow-hidden">
+                        <button
+                          onClick={() => setExpandedGroups(prev => {
+                            const next = new Set(prev);
+                            if (next.has(g.key)) next.delete(g.key); else next.add(g.key);
+                            return next;
+                          })}
+                          className="w-full flex items-center justify-between px-4 py-3 bg-slate-800 hover:bg-slate-750 transition-colors"
+                          style={{ borderLeft: `4px solid ${g.color}` }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">{isOpen ? '▼' : '▶'}</span>
+                            <span>{g.emoji}</span>
+                            <span className="font-semibold text-white">{g.label}</span>
+                          </div>
+                          <span className="text-sm text-slate-400 font-medium">{g.tasks.length} task</span>
+                        </button>
+                        {isOpen && (
+                          <div className="space-y-2 p-3 bg-slate-900/50">
+                            {g.tasks.map(task => (
+                              <TaskItem
+                                key={task.id}
+                                task={task}
+                                projects={projects}
+                                onToggle={() => handleToggleTask(task.id)}
+                                onDelete={() => handleDeleteTask(task.id)}
+                                onEdit={() => setEditingTask(task)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            )}
           </div>
         )}
 
