@@ -192,28 +192,50 @@ function KanbanColumn({
   onEditProject: (project: Project) => void;
   selectedProjectId: string | null;
 }) {
+  const [dragOver, setDragOver] = useState(false);
   const columnProjects = projects.filter(p => p.status === status);
-  
+
   const statusColors = {
     backlog: 'border-slate-600 bg-slate-800/50',
     active: 'border-amber-500/50 bg-amber-500/10',
     done: 'border-green-500/50 bg-green-500/10',
   };
 
+  const dragOverColors = {
+    backlog: 'border-slate-400 bg-slate-700/70',
+    active: 'border-amber-400 bg-amber-500/20',
+    done: 'border-green-400 bg-green-500/20',
+  };
+
   return (
-    <div className={`rounded-xl border-2 ${statusColors[status]} p-4 min-h-[200px]`}>
+    <div
+      className={`rounded-xl border-2 p-4 min-h-[200px] transition-colors ${dragOver ? dragOverColors[status] : statusColors[status]}`}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const projectId = e.dataTransfer.getData('text/plain');
+        if (projectId) onMoveProject(projectId, status);
+      }}
+    >
       <h3 className="font-bold text-sm uppercase tracking-wide text-slate-300 mb-3">
         {title} ({columnProjects.length})
       </h3>
-      
+
       <div className="space-y-2">
         {columnProjects.map(project => (
           <div
             key={project.id}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData('text/plain', project.id);
+              e.dataTransfer.effectAllowed = 'move';
+            }}
             onClick={() => onSelectProject(selectedProjectId === project.id ? null : project.id)}
-            className={`p-3 rounded-xl cursor-pointer transition-all ${
-              selectedProjectId === project.id 
-                ? 'ring-2 ring-white bg-slate-700' 
+            className={`p-3 rounded-xl cursor-grab active:cursor-grabbing transition-all ${
+              selectedProjectId === project.id
+                ? 'ring-2 ring-white bg-slate-700'
                 : 'bg-slate-700/50 hover:bg-slate-700'
             }`}
             style={{ borderLeft: `4px solid ${project.color}` }}
@@ -232,35 +254,13 @@ function KanbanColumn({
               </button>
             </div>
             <p className="text-xs text-slate-400 mt-1 line-clamp-2">{project.description}</p>
-
-            <div className="flex gap-1 mt-2">
-              {status !== 'backlog' && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onMoveProject(project.id, 'backlog'); }}
-                  className="text-xs px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded font-medium"
-                >
-                  ← Backlog
-                </button>
-              )}
-              {status !== 'active' && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onMoveProject(project.id, 'active'); }}
-                  className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded font-medium"
-                >
-                  🔄 Attivo
-                </button>
-              )}
-              {status !== 'done' && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onMoveProject(project.id, 'done'); }}
-                  className="text-xs px-2 py-1 bg-green-600 hover:bg-green-500 rounded font-medium"
-                >
-                  Done ✓
-                </button>
-              )}
-            </div>
           </div>
         ))}
+        {dragOver && columnProjects.length === 0 && (
+          <div className="border-2 border-dashed border-slate-500 rounded-xl p-4 text-center text-slate-500 text-sm">
+            Rilascia qui
+          </div>
+        )}
       </div>
     </div>
   );
