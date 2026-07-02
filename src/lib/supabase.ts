@@ -12,6 +12,10 @@ export interface Task {
   due_date: string | null;
   category: 'work' | 'admin' | 'personal' | 'travel';
   completed: boolean;
+  remind_at: string | null;
+  reminder_channel: 'telegram' | 'email';
+  reminder_status: 'pending' | 'sent' | 'skipped';
+  reminded_at: string | null;
   created_at: string;
 }
 
@@ -137,7 +141,7 @@ function ensureLocalSeeds() {
 
 function readTasksLocal() {
   ensureLocalSeeds();
-  return readLocal<Task[]>(TASKS_KEY, []);
+  return readLocal<Task[]>(TASKS_KEY, []).map(normalizeTask);
 }
 
 function writeTasksLocal(tasks: Task[]) {
@@ -188,7 +192,7 @@ function makeId() {
 }
 
 function sortTasks(tasks: Task[]) {
-  return [...tasks].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return [...tasks].map(normalizeTask).sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
 function sortProjects(projects: Project[]) {
@@ -232,9 +236,27 @@ function queueOperation(operation: SyncOperation) {
   writeQueue([...queue, operation]);
 }
 
+function normalizeTask(task: Partial<Task>): Task {
+  return {
+    id: task.id ?? '',
+    text: task.text ?? '',
+    notes: task.notes ?? '',
+    project_id: task.project_id ?? null,
+    priority: task.priority ?? 'medium',
+    due_date: task.due_date ?? null,
+    category: task.category ?? 'work',
+    completed: task.completed ?? false,
+    remind_at: task.remind_at ?? null,
+    reminder_channel: task.reminder_channel ?? 'telegram',
+    reminder_status: task.reminder_status ?? 'pending',
+    reminded_at: task.reminded_at ?? null,
+    created_at: task.created_at ?? nowIso(),
+  };
+}
+
 function replaceTaskLocal(task: Task) {
   const tasks = readTasksLocal();
-  writeTasksLocal([task, ...tasks.filter((item) => item.id !== task.id)]);
+  writeTasksLocal([normalizeTask(task), ...tasks.filter((item) => item.id !== task.id)]);
 }
 
 function replaceProjectLocal(project: Project) {
@@ -253,7 +275,7 @@ async function loadRemoteTasks() {
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return data || [];
+    return (data || []).map(normalizeTask);
 }
 
 async function loadRemoteProjects() {
@@ -392,7 +414,7 @@ export async function addTask(task: Omit<Task, 'id' | 'created_at'>): Promise<Ta
   const mode = await detectBackendMode();
 
   if (mode === 'local') {
-    const newTask: Task = { ...task, id: makeId(), created_at: nowIso() };
+    const newTask: Task = normalizeTask({ ...task, id: makeId(), created_at: nowIso() });
     replaceTaskLocal(newTask);
     queueOperation({ entity: 'task', type: 'upsert', id: newTask.id });
     return newTask;
@@ -406,8 +428,8 @@ export async function addTask(task: Omit<Task, 'id' | 'created_at'>): Promise<Ta
       .single();
 
     if (error) throw error;
-    replaceTaskLocal(data);
-    return data;
+    replaceTaskLocal(normalizeTask(data));
+    return normalizeTask(data);
   } catch (error) {
     console.error('Error adding task, falling back to local mode:', error);
     setLocalMode();
@@ -422,7 +444,7 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<Ta
     const current = readTasksLocal().find((task) => task.id === id);
     if (!current) return null;
 
-    const updated = { ...current, ...updates };
+    const updated = normalizeTask({ ...current, ...updates });
     replaceTaskLocal(updated);
     queueOperation({ entity: 'task', type: 'upsert', id });
     return updated;
@@ -437,8 +459,8 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<Ta
       .single();
 
     if (error) throw error;
-    replaceTaskLocal(data);
-    return data;
+    replaceTaskLocal(normalizeTask(data));
+    return normalizeTask(data);
   } catch (error) {
     console.error('Error updating task, falling back to local mode:', error);
     setLocalMode();

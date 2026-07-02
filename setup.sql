@@ -18,8 +18,17 @@ CREATE TABLE IF NOT EXISTS tasks (
   due_date DATE,
   category TEXT DEFAULT 'work' CHECK (category IN ('work', 'admin', 'personal', 'travel')),
   completed BOOLEAN DEFAULT false,
+  remind_at TIMESTAMP WITH TIME ZONE,
+  reminder_channel TEXT DEFAULT 'telegram' CHECK (reminder_channel IN ('telegram', 'email')),
+  reminder_status TEXT DEFAULT 'pending' CHECK (reminder_status IN ('pending', 'sent', 'skipped')),
+  reminded_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS remind_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_channel TEXT DEFAULT 'telegram';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_status TEXT DEFAULT 'pending';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMP WITH TIME ZONE;
 
 -- Enable RLS
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;

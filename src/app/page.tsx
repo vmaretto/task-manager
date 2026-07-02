@@ -7,6 +7,19 @@ import { Task, Project, getTasks, getProjects, addTask, updateTask, deleteTask, 
 // COMPONENTS
 // ============================================
 
+const reminderStatusLabel = {
+  pending: 'Programmato',
+  sent: 'Inviato',
+  skipped: 'Saltato',
+};
+
+function formatReminderDate(value: string) {
+  return new Date(value).toLocaleString('it-IT', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+}
+
 function QuickCapture({ onAdd }: { onAdd: (text: string) => void }) {
   const [text, setText] = useState('');
 
@@ -130,6 +143,12 @@ function TaskItem({
             {task.due_date && (
               <span className="text-xs text-slate-400 bg-slate-700 px-2 py-1 rounded-md">
                 📅 {new Date(task.due_date).toLocaleDateString('it-IT')}
+              </span>
+            )}
+
+            {task.remind_at && (
+              <span className="text-xs text-cyan-200 bg-cyan-500/15 border border-cyan-500/30 px-2 py-1 rounded-md">
+                ⏰ {formatReminderDate(task.remind_at)} · {reminderStatusLabel[task.reminder_status]}
               </span>
             )}
           </div>
@@ -258,6 +277,10 @@ function EditTaskModal({
     project_id: null,
     due_date: '',
     completed: false,
+    remind_at: null,
+    reminder_channel: 'telegram' as const,
+    reminder_status: 'pending' as const,
+    reminded_at: null,
     created_at: '',
   };
 
@@ -267,6 +290,9 @@ function EditTaskModal({
   const [category, setCategory] = useState<'work' | 'admin' | 'personal' | 'travel'>(initialTask.category);
   const [projectId, setProjectId] = useState<string | null>(initialTask.project_id);
   const [dueDate, setDueDate] = useState(initialTask.due_date || '');
+  const [remindAt, setRemindAt] = useState(initialTask.remind_at ? initialTask.remind_at.slice(0, 16) : '');
+  const [reminderChannel, setReminderChannel] = useState<'telegram' | 'email'>(initialTask.reminder_channel ?? 'telegram');
+  const [reminderStatus, setReminderStatus] = useState<'pending' | 'sent' | 'skipped'>(initialTask.reminder_status ?? 'pending');
 
   if (!isOpen || !task) return null;
 
@@ -280,6 +306,10 @@ function EditTaskModal({
         category,
         project_id: projectId,
         due_date: dueDate || null,
+        remind_at: remindAt ? new Date(remindAt).toISOString() : null,
+        reminder_channel: reminderChannel,
+        reminder_status: remindAt ? reminderStatus : 'pending',
+        reminded_at: reminderStatus === 'sent' && remindAt ? task.reminded_at ?? new Date().toISOString() : null,
       });
       onClose();
     }
@@ -367,6 +397,45 @@ function EditTaskModal({
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
             />
           </div>
+
+          <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Reminder</label>
+            <input
+              type="datetime-local"
+              value={remindAt}
+              onChange={(e) => setRemindAt(e.target.value)}
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-slate-400">Quando vuoi ricevere il promemoria vero.</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-300 mb-1 font-medium">Canale</label>
+              <select
+                value={reminderChannel}
+                onChange={(e) => setReminderChannel(e.target.value as 'telegram' | 'email')}
+                className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
+              >
+                <option value="telegram">Telegram</option>
+                <option value="email">Email</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-300 mb-1 font-medium">Stato reminder</label>
+              <select
+                value={reminderStatus}
+                onChange={(e) => setReminderStatus(e.target.value as 'pending' | 'sent' | 'skipped')}
+                className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
+                disabled={!remindAt}
+              >
+                <option value="pending">Programmato</option>
+                <option value="sent">Inviato</option>
+                <option value="skipped">Saltato</option>
+              </select>
+            </div>
+          </div>
           
           <div className="flex gap-2 pt-2">
             <button
@@ -406,6 +475,8 @@ function AddTaskModal({
   const [category, setCategory] = useState<'work' | 'admin' | 'personal' | 'travel'>('work');
   const [projectId, setProjectId] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState('');
+  const [remindAt, setRemindAt] = useState('');
+  const [reminderChannel, setReminderChannel] = useState<'telegram' | 'email'>('telegram');
 
   if (!isOpen) return null;
 
@@ -420,6 +491,10 @@ function AddTaskModal({
         project_id: projectId,
         due_date: dueDate || null,
         completed: false,
+        remind_at: remindAt ? new Date(remindAt).toISOString() : null,
+        reminder_channel: reminderChannel,
+        reminder_status: 'pending',
+        reminded_at: null,
       });
       setText('');
       setNotes('');
@@ -427,6 +502,8 @@ function AddTaskModal({
       setCategory('work');
       setProjectId(null);
       setDueDate('');
+      setRemindAt('');
+      setReminderChannel('telegram');
       onClose();
     }
   };
@@ -514,6 +591,29 @@ function AddTaskModal({
               onChange={(e) => setDueDate(e.target.value)}
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Reminder</label>
+            <input
+              type="datetime-local"
+              value={remindAt}
+              onChange={(e) => setRemindAt(e.target.value)}
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-slate-400">Se lo imposti, il task e` pronto per i promemoria automatici.</p>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Canale reminder</label>
+            <select
+              value={reminderChannel}
+              onChange={(e) => setReminderChannel(e.target.value as 'telegram' | 'email')}
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
+            >
+              <option value="telegram">Telegram</option>
+              <option value="email">Email</option>
+            </select>
           </div>
           
           <div className="flex gap-2 pt-2">
@@ -745,6 +845,10 @@ export default function Home() {
       due_date: null,
       category: 'work',
       completed: false,
+      remind_at: null,
+      reminder_channel: 'telegram',
+      reminder_status: 'pending',
+      reminded_at: null,
     });
     if (newTask) {
       setTasks(prev => [newTask, ...prev]);
