@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { supabase, Task, Project, getTasks, getProjects, addTask, updateTask, deleteTask, addProject, updateProject } from '../lib/supabase';
+import { useState, useEffect } from 'react';
+import { Task, Project, getTasks, getProjects, addTask, updateTask, deleteTask, addProject, updateProject, getBackendMode, getSyncStatus, syncPendingChanges } from '../lib/supabase';
 
 // ============================================
 // COMPONENTS
@@ -249,23 +249,24 @@ function EditTaskModal({
   onSave: (taskId: string, updates: Partial<Task>) => void;
   projects: Project[];
 }) {
-  const [text, setText] = useState('');
-  const [notes, setNotes] = useState('');
-  const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium');
-  const [category, setCategory] = useState<'work' | 'admin' | 'personal' | 'travel'>('work');
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const [dueDate, setDueDate] = useState('');
+  const initialTask = task ?? {
+    id: '',
+    text: '',
+    notes: '',
+    priority: 'medium' as const,
+    category: 'work' as const,
+    project_id: null,
+    due_date: '',
+    completed: false,
+    created_at: '',
+  };
 
-  useEffect(() => {
-    if (task) {
-      setText(task.text);
-      setNotes(task.notes || '');
-      setPriority(task.priority);
-      setCategory(task.category);
-      setProjectId(task.project_id);
-      setDueDate(task.due_date || '');
-    }
-  }, [task]);
+  const [text, setText] = useState(initialTask.text);
+  const [notes, setNotes] = useState(initialTask.notes || '');
+  const [priority, setPriority] = useState<'high' | 'medium' | 'low'>(initialTask.priority);
+  const [category, setCategory] = useState<'work' | 'admin' | 'personal' | 'travel'>(initialTask.category);
+  const [projectId, setProjectId] = useState<string | null>(initialTask.project_id);
+  const [dueDate, setDueDate] = useState(initialTask.due_date || '');
 
   if (!isOpen || !task) return null;
 
@@ -673,21 +674,66 @@ export default function Home() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('active');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [backendMode, setBackendMode] = useState<'remote' | 'local'>('remote');
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSyncError, setLastSyncError] = useState<string | null>(null);
 
-  // Load data from Supabase
+  async function refreshData(showLoader = false) {
+    if (showLoader) setLoading(true);
+    const mode = await getBackendMode();
+    const [tasksData, projectsData] = await Promise.all([getTasks(), getProjects()]);
+    const syncStatus = getSyncStatus();
+    setBackendMode(mode);
+    setTasks(tasksData);
+    setProjects(projectsData);
+    setPendingSyncCount(syncStatus.pendingCount);
+    setSyncing(syncStatus.syncing);
+    setLastSyncError(syncStatus.lastSyncError);
+    if (showLoader) setLoading(false);
+  }
+
   useEffect(() => {
-    async function loadData() {
-      setLoading(true);
-      const [tasksData, projectsData] = await Promise.all([
-        getTasks(),
-        getProjects()
-      ]);
-      setTasks(tasksData);
-      setProjects(projectsData);
-      setLoading(false);
-    }
-    loadData();
+    const timer = window.setTimeout(() => {
+      void refreshData(true);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(async () => {
+      const mode = await getBackendMode();
+      setBackendMode(mode);
+
+      if (mode === 'remote') {
+        setSyncing(true);
+        const synced = await syncPendingChanges();
+        const syncStatus = getSyncStatus();
+        setPendingSyncCount(syncStatus.pendingCount);
+        setLastSyncError(syncStatus.lastSyncError);
+        setSyncing(syncStatus.syncing);
+
+        if (synced) {
+          await refreshData(false);
+        }
+      } else {
+        const syncStatus = getSyncStatus();
+        setPendingSyncCount(syncStatus.pendingCount);
+        setLastSyncError(syncStatus.lastSyncError);
+        setSyncing(syncStatus.syncing);
+      }
+    }, 15000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const refreshSyncStatus = () => {
+    const syncStatus = getSyncStatus();
+    setPendingSyncCount(syncStatus.pendingCount);
+    setSyncing(syncStatus.syncing);
+    setLastSyncError(syncStatus.lastSyncError);
+  };
 
   // Quick add task
   const handleQuickAdd = async (text: string) => {
@@ -702,6 +748,7 @@ export default function Home() {
     });
     if (newTask) {
       setTasks(prev => [newTask, ...prev]);
+      refreshSyncStatus();
     }
   };
 
@@ -710,6 +757,7 @@ export default function Home() {
     const newTask = await addTask(taskData);
     if (newTask) {
       setTasks(prev => [newTask, ...prev]);
+      refreshSyncStatus();
     }
   };
 
@@ -720,6 +768,7 @@ export default function Home() {
       const updated = await updateTask(taskId, { completed: !task.completed });
       if (updated) {
         setTasks(prev => prev.map(t => t.id === taskId ? updated : t));
+        refreshSyncStatus();
       }
     }
   };
@@ -729,6 +778,7 @@ export default function Home() {
     const success = await deleteTask(taskId);
     if (success) {
       setTasks(prev => prev.filter(t => t.id !== taskId));
+      refreshSyncStatus();
     }
   };
 
@@ -737,6 +787,7 @@ export default function Home() {
     const updated = await updateTask(taskId, updates);
     if (updated) {
       setTasks(prev => prev.map(t => t.id === taskId ? updated : t));
+      refreshSyncStatus();
     }
   };
 
@@ -745,6 +796,7 @@ export default function Home() {
     const newProject = await addProject(projectData);
     if (newProject) {
       setProjects(prev => [...prev, newProject]);
+      refreshSyncStatus();
     }
   };
 
@@ -753,6 +805,7 @@ export default function Home() {
     const updated = await updateProject(projectId, { status: newStatus });
     if (updated) {
       setProjects(prev => prev.map(p => p.id === projectId ? updated : p));
+      refreshSyncStatus();
     }
   };
 
@@ -795,7 +848,9 @@ export default function Home() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-white">⚡ SwitchBoard</h1>
-              <p className="text-sm text-slate-400">Task & Projects • Supabase</p>
+              <p className="text-sm text-slate-400">
+                Task & Projects • {backendMode === 'remote' ? 'Supabase' : 'Modalita locale'}
+              </p>
             </div>
             <div className="flex gap-2">
               <button
@@ -812,6 +867,31 @@ export default function Home() {
               </button>
             </div>
           </div>
+
+          {backendMode === 'local' && (
+            <div className="mt-4 rounded-xl border-2 border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+              <div className="font-semibold">Stai lavorando in locale.</div>
+              <div>
+                Supabase non risponde. Le modifiche restano in coda su questo dispositivo e verranno sincronizzate appena torna disponibile.
+              </div>
+              {pendingSyncCount > 0 && (
+                <div className="mt-1">
+                  Modifiche in attesa di sync: {pendingSyncCount}
+                </div>
+              )}
+              {lastSyncError && (
+                <div className="mt-1 text-amber-300/90">
+                  Ultimo errore sync: {lastSyncError}
+                </div>
+              )}
+            </div>
+          )}
+
+          {backendMode === 'remote' && pendingSyncCount > 0 && (
+            <div className="mt-4 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 px-4 py-3 text-sm text-blue-200">
+              {syncing ? 'Sincronizzazione con Supabase in corso...' : `Supabase di nuovo online. ${pendingSyncCount} modifiche in attesa di sincronizzazione.`}
+            </div>
+          )}
           
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3 mt-4">
@@ -981,6 +1061,7 @@ export default function Home() {
       />
       
       <EditTaskModal
+        key={editingTask?.id ?? 'edit-task'}
         isOpen={!!editingTask}
         onClose={() => setEditingTask(null)}
         task={editingTask}
