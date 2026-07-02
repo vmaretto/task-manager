@@ -208,7 +208,7 @@ async function detectBackendMode(forceRefresh = false): Promise<BackendMode> {
   }
 
   try {
-    const response = await fetch(`${supabaseUrl}/rest/v1/`, {
+    const response = await fetch(`${supabaseUrl}/rest/v1/tasks?select=id&limit=1`, {
       headers: {
         apikey: supabaseAnonKey ?? '',
         Authorization: `Bearer ${supabaseAnonKey ?? ''}`,
