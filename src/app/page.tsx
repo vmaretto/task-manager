@@ -89,7 +89,10 @@ function TaskItem({
   };
 
   return (
-    <div className={`bg-slate-800 rounded-xl p-4 border-2 ${task.completed ? 'opacity-50 border-slate-700' : 'border-slate-600'} shadow-lg`}>
+    <div
+      draggable
+      onDragStart={(e) => { e.dataTransfer.setData('application/task-id', task.id); e.dataTransfer.effectAllowed = 'move'; }}
+      className={`bg-slate-800 rounded-xl p-4 border-2 ${task.completed ? 'opacity-50 border-slate-700' : 'border-slate-600'} shadow-lg cursor-grab active:cursor-grabbing`}>
       <div className="flex items-start gap-3">
         {/* Larger tap target wrapper */}
         <div 
@@ -1233,14 +1236,26 @@ export default function Home() {
                   }
                   for (const p of projects) {
                     const pts = byProject.get(p.id);
-                    if (pts?.length) groups.push({ key: p.id, label: p.name, emoji: p.emoji, color: p.color, tasks: pts });
+                    groups.push({ key: p.id, label: p.name, emoji: p.emoji, color: p.color, tasks: pts ?? [] });
                   }
                   const noProject = byProject.get(null);
-                  if (noProject?.length) groups.push({ key: '__none__', label: 'Senza progetto', emoji: '📋', color: '#64748b', tasks: noProject });
+                  groups.push({ key: '__none__', label: 'Senza progetto', emoji: '📋', color: '#64748b', tasks: noProject ?? [] });
                   return groups.map(g => {
                     const isOpen = expandedGroups.has(g.key);
+                    const targetProjectId = g.key === '__none__' ? null : g.key;
                     return (
-                      <div key={g.key} className="rounded-xl border-2 border-slate-700 overflow-hidden">
+                      <div
+                        key={g.key}
+                        className="rounded-xl border-2 border-slate-700 overflow-hidden transition-colors"
+                        onDragOver={(e) => { if (e.dataTransfer.types.includes('application/task-id')) { e.preventDefault(); e.currentTarget.style.borderColor = g.color; } }}
+                        onDragLeave={(e) => { e.currentTarget.style.borderColor = ''; }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.currentTarget.style.borderColor = '';
+                          const taskId = e.dataTransfer.getData('application/task-id');
+                          if (taskId) handleUpdateTask(taskId, { project_id: targetProjectId });
+                        }}
+                      >
                         <button
                           onClick={() => setExpandedGroups(prev => {
                             const next = new Set(prev);
