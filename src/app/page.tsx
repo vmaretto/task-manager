@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import CanvasView from './CanvasView';
 import { Task, Project, getTasks, getProjects, addTask, updateTask, deleteTask, addProject, updateProject, deleteProject, getBackendMode, getSyncStatus, syncPendingChanges } from '../lib/supabase';
 
 // ============================================
@@ -876,7 +877,7 @@ export default function Home() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('active');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'list' | 'grouped'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grouped' | 'canvas'>('list');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [backendMode, setBackendMode] = useState<'remote' | 'local'>('remote');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
@@ -1221,6 +1222,12 @@ export default function Home() {
                 >
                   Per progetto
                 </button>
+                <button
+                  onClick={() => setViewMode('canvas')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === 'canvas' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                  Canvas
+                </button>
               </div>
             </div>
 
@@ -1243,7 +1250,7 @@ export default function Home() {
                   />
                 ))}
               </div>
-            ) : (
+            ) : viewMode === 'grouped' ? (
               <div className="space-y-4">
                 {(() => {
                   const groups: { key: string; label: string; emoji: string; color: string; tasks: Task[] }[] = [];
@@ -1310,7 +1317,16 @@ export default function Home() {
                   });
                 })()}
               </div>
-            )}
+            ) : viewMode === 'canvas' ? (
+              <CanvasView
+                tasks={sortedTasks}
+                projects={projects}
+                onMoveTask={(taskId, projectId) => handleUpdateTask(taskId, { project_id: projectId })}
+                onToggleTask={handleToggleTask}
+                onDeleteTask={handleDeleteTask}
+                onEditTask={setEditingTask}
+              />
+            ) : null}
           </div>
         )}
 
