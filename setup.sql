@@ -5,8 +5,12 @@ CREATE TABLE IF NOT EXISTS projects (
   status TEXT DEFAULT 'backlog' CHECK (status IN ('backlog', 'active', 'done')),
   color TEXT DEFAULT '#3b82f6',
   emoji TEXT DEFAULT '📁',
-  description TEXT DEFAULT ''
+  description TEXT DEFAULT '',
+  parent_project_id UUID REFERENCES projects(id) ON DELETE SET NULL
 );
+
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS parent_project_id UUID REFERENCES projects(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS projects_parent_project_id_idx ON projects(parent_project_id);
 
 -- Tabella Tasks
 CREATE TABLE IF NOT EXISTS tasks (

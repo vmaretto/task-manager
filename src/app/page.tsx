@@ -258,6 +258,10 @@ function KanbanColumn({
               </button>
             </div>
             <p className="text-xs text-slate-400 mt-1 line-clamp-2">{project.description}</p>
+            {project.parent_project_id && (() => {
+              const parent = projects.find(candidate => candidate.id === project.parent_project_id);
+              return parent ? <p className="mt-1 text-[10px] font-semibold text-blue-300">↳ {parent.emoji} {parent.name}</p> : null;
+            })()}
           </div>
         ))}
         {dragOver && columnProjects.length === 0 && (
@@ -652,38 +656,62 @@ function AddTaskModal({
   );
 }
 
+function getProjectDescendantIds(projectId: string, projects: Project[]) {
+  const descendants = new Set<string>();
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    for (const candidate of projects) {
+      if (candidate.parent_project_id === projectId || (candidate.parent_project_id && descendants.has(candidate.parent_project_id))) {
+        if (!descendants.has(candidate.id)) {
+          descendants.add(candidate.id);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  return descendants;
+}
+
 function EditProjectModal({
   isOpen,
   onClose,
   project,
+  projects,
   onSave,
   onDelete
 }: {
   isOpen: boolean;
   onClose: () => void;
   project: Project | null;
+  projects: Project[];
   onSave: (projectId: string, updates: Partial<Project>) => void;
   onDelete: (projectId: string) => void;
 }) {
-  const initial = project ?? { id: '', name: '', description: '', emoji: '📁', color: '#3b82f6', status: 'backlog' as const };
+  const initial = project ?? { id: '', name: '', description: '', emoji: '📁', color: '#3b82f6', status: 'backlog' as const, parent_project_id: null };
   const [name, setName] = useState(initial.name);
   const [description, setDescription] = useState(initial.description);
   const [emoji, setEmoji] = useState(initial.emoji);
   const [color, setColor] = useState(initial.color);
   const [status, setStatus] = useState(initial.status);
+  const [parentProjectId, setParentProjectId] = useState<string | null>(initial.parent_project_id);
 
   if (!isOpen || !project) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
-      onSave(project.id, { name: name.trim(), description: description.trim(), emoji, color, status });
+      onSave(project.id, { name: name.trim(), description: description.trim(), emoji, color, status, parent_project_id: parentProjectId });
       onClose();
     }
   };
 
   const colors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
   const emojis = ['📁', '🚀', '💡', '🎯', '📊', '🔧', '🌱', '⭐', '🔬', '📱', '🇪🇺', '🌍', '🍎', '🏡', '⚠️', '🎓', '🍺', '🫒', '🍕'];
+  const invalidParentIds = getProjectDescendantIds(project.id, projects);
+  invalidParentIds.add(project.id);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onClose}>
@@ -705,6 +733,22 @@ function EditProjectModal({
               <option value="active">🔄 In Corso</option>
               <option value="done">✅ Completato</option>
             </select>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Area / progetto padre</label>
+            <select
+              value={parentProjectId ?? ''}
+              onChange={(e) => setParentProjectId(e.target.value || null)}
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
+            >
+              <option value="">Nessuna — progetto principale</option>
+              {projects
+                .filter(candidate => !invalidParentIds.has(candidate.id))
+                .map(candidate => (
+                  <option key={candidate.id} value={candidate.id}>{candidate.emoji} {candidate.name}</option>
+                ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-400">Esempio: assegna un sottoprogetto all’area POSTI.</p>
           </div>
           <div>
             <label className="block text-sm text-slate-300 mb-2 font-medium">Emoji</label>
@@ -742,16 +786,19 @@ function EditProjectModal({
 function AddProjectModal({ 
   isOpen, 
   onClose, 
-  onAdd 
+  onAdd,
+  projects,
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
   onAdd: (project: Omit<Project, 'id'>) => void;
+  projects: Project[];
 }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [emoji, setEmoji] = useState('📁');
   const [color, setColor] = useState('#3b82f6');
+  const [parentProjectId, setParentProjectId] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -764,11 +811,13 @@ function AddProjectModal({
         emoji,
         color,
         status: 'backlog',
+        parent_project_id: parentProjectId,
       });
       setName('');
       setDescription('');
       setEmoji('📁');
       setColor('#3b82f6');
+      setParentProjectId(null);
       onClose();
     }
   };
@@ -806,6 +855,20 @@ function AddProjectModal({
               placeholder="Breve descrizione"
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Area / progetto padre</label>
+            <select
+              value={parentProjectId ?? ''}
+              onChange={(e) => setParentProjectId(e.target.value || null)}
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
+            >
+              <option value="">Nessuna — progetto principale</option>
+              {projects.map(candidate => (
+                <option key={candidate.id} value={candidate.id}>{candidate.emoji} {candidate.name}</option>
+              ))}
+            </select>
           </div>
           
           <div>
@@ -862,11 +925,324 @@ function AddProjectModal({
   );
 }
 
+type TimeFilter = 'all' | 'overdue' | 'today' | 'week' | 'unscheduled';
+
+function dateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysKey(days: number) {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + days);
+  return dateKey(date);
+}
+
+function OverviewDashboard({
+  tasks,
+  projects,
+  onToggleTask,
+  onEditTask,
+  onOpenTasks,
+  onOpenProjects,
+}: {
+  tasks: Task[];
+  projects: Project[];
+  onToggleTask: (taskId: string) => void | Promise<void>;
+  onEditTask: (task: Task) => void;
+  onOpenTasks: (timeFilter: TimeFilter, projectId?: string | null) => void;
+  onOpenProjects: () => void;
+}) {
+  const today = dateKey();
+  const weekEnd = addDaysKey(7);
+  const openTasks = tasks.filter(task => !task.completed);
+  const overdueTasks = openTasks.filter(task => task.due_date && task.due_date < today);
+  const todayTasks = openTasks.filter(task => task.due_date === today);
+  const weekTasks = openTasks.filter(task => task.due_date && task.due_date > today && task.due_date <= weekEnd);
+  const unscheduledTasks = openTasks.filter(task => !task.due_date);
+  const unassignedTasks = openTasks.filter(task => !task.project_id);
+
+  const priorityOrder = { high: 0, medium: 1, low: 2 };
+  const focusTasks = [...openTasks]
+    .sort((a, b) => {
+      const aUrgency = a.due_date && a.due_date < today ? 0 : a.due_date === today ? 1 : a.due_date ? 2 : 3;
+      const bUrgency = b.due_date && b.due_date < today ? 0 : b.due_date === today ? 1 : b.due_date ? 2 : 3;
+      if (aUrgency !== bUrgency) return aUrgency - bUrgency;
+      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) return priorityOrder[a.priority] - priorityOrder[b.priority];
+      return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31');
+    })
+    .slice(0, 5);
+
+  const posterProjects: Array<Project & { synthetic?: boolean }> = [
+    ...projects,
+    {
+      id: '__none__',
+      name: 'Area generale',
+      status: 'active',
+      color: '#94a3b8',
+      emoji: '🧭',
+      description: 'Attività non ancora assegnate a un progetto',
+      parent_project_id: null,
+      synthetic: true,
+    },
+  ];
+
+  const projectOverview = posterProjects
+    .map(project => {
+      const parent = project.parent_project_id ? projects.find(candidate => candidate.id === project.parent_project_id) : undefined;
+      const projectTasks = tasks.filter(task => project.synthetic ? !task.project_id : task.project_id === project.id);
+      const open = projectTasks.filter(task => !task.completed);
+      const overdue = open.filter(task => task.due_date && task.due_date < today).length;
+      const high = open.filter(task => task.priority === 'high').length;
+      const completed = projectTasks.filter(task => task.completed).length;
+      const progress = projectTasks.length ? Math.round((completed / projectTasks.length) * 100) : 0;
+      const nextAction = [...open].sort((a, b) => {
+        const aUrgency = a.due_date && a.due_date < today ? 0 : a.due_date === today ? 1 : a.due_date ? 2 : 3;
+        const bUrgency = b.due_date && b.due_date < today ? 0 : b.due_date === today ? 1 : b.due_date ? 2 : 3;
+        if (aUrgency !== bUrgency) return aUrgency - bUrgency;
+        if (priorityOrder[a.priority] !== priorityOrder[b.priority]) return priorityOrder[a.priority] - priorityOrder[b.priority];
+        return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31');
+      })[0];
+      const reminder = [...open]
+        .filter(task => task.remind_at && task.reminder_status === 'pending')
+        .sort((a, b) => (a.remind_at ?? '').localeCompare(b.remind_at ?? ''))[0];
+      const health = project.status === 'done'
+        ? { label: 'Chiuso', dot: 'bg-emerald-400', tone: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' }
+        : overdue > 0 || high >= 3
+          ? { label: 'Critico', dot: 'bg-rose-400', tone: 'border-rose-500/40 bg-rose-500/10 text-rose-200' }
+          : high > 0 || (reminder?.remind_at && new Date(reminder.remind_at) < new Date())
+            ? { label: 'Attenzione', dot: 'bg-amber-400', tone: 'border-amber-500/35 bg-amber-500/10 text-amber-200' }
+            : open.length === 0
+              ? { label: 'In attesa', dot: 'bg-slate-400', tone: 'border-slate-600 bg-slate-700/30 text-slate-300' }
+              : { label: 'In ordine', dot: 'bg-sky-400', tone: 'border-sky-500/30 bg-sky-500/10 text-sky-200' };
+      return { project, parent, open: open.length, overdue, high, progress, nextAction, reminder, health };
+    })
+    .sort((a, b) => {
+      const statusOrder = { active: 0, backlog: 1, done: 2 };
+      const statusDifference = statusOrder[a.project.status] - statusOrder[b.project.status];
+      if (statusDifference !== 0) return statusDifference;
+      return (b.overdue * 4 + b.high * 2 + b.open) - (a.overdue * 4 + a.high * 2 + a.open);
+    });
+
+  const importantReminders = [...openTasks]
+    .filter(task => task.remind_at && task.reminder_status === 'pending')
+    .sort((a, b) => (a.remind_at ?? '').localeCompare(b.remind_at ?? ''))
+    .slice(0, 5);
+
+  const dateLabel = new Intl.DateTimeFormat('it-IT', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(new Date());
+  const firstNameGreeting = new Date().getHours() < 13 ? 'Buongiorno' : new Date().getHours() < 18 ? 'Buon pomeriggio' : 'Buonasera';
+
+  const metricCards: { label: string; value: number; helper: string; filter: TimeFilter; tone: string }[] = [
+    { label: 'Scaduti', value: overdueTasks.length, helper: 'richiedono una decisione', filter: 'overdue', tone: 'border-rose-500/30 bg-rose-500/10 text-rose-200' },
+    { label: 'Oggi', value: todayTasks.length, helper: 'con scadenza oggi', filter: 'today', tone: 'border-sky-500/30 bg-sky-500/10 text-sky-100' },
+    { label: 'Prossimi 7 giorni', value: weekTasks.length, helper: 'in arrivo', filter: 'week', tone: 'border-violet-500/30 bg-violet-500/10 text-violet-100' },
+    { label: 'Senza data', value: unscheduledTasks.length, helper: 'da pianificare', filter: 'unscheduled', tone: 'border-slate-600 bg-slate-800/80 text-slate-100' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <section aria-labelledby="project-map" className="overflow-hidden rounded-3xl border border-slate-700/80 bg-gradient-to-br from-slate-800 via-slate-900 to-blue-950/60 p-4 shadow-2xl shadow-slate-950/30 sm:p-6">
+        <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="mb-2 text-sm font-semibold capitalize text-blue-300">{dateLabel}</p>
+            <h2 id="project-map" className="text-3xl font-bold tracking-tight text-white sm:text-4xl">La tua mappa dei progetti</h2>
+            <p className="mt-2 max-w-3xl text-slate-300">{firstNameGreeting}. Ogni riquadro mostra cosa richiede attenzione e la prossima azione concreta.</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+            <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-rose-200">● {projectOverview.filter(item => item.health.label === 'Critico').length} critici</span>
+            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-amber-200">● {projectOverview.filter(item => item.health.label === 'Attenzione').length} da seguire</span>
+            <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-blue-200">{projects.filter(project => !project.parent_project_id).length} aree · {projects.filter(project => project.parent_project_id).length} sottoprogetti</span>
+            <button onClick={onOpenProjects} className="rounded-full border border-slate-600 bg-slate-800 px-3 py-1.5 text-slate-200 hover:border-slate-400">Gestisci progetti →</button>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {projectOverview.map(({ project, parent, open, overdue, high, progress, nextAction, reminder, health }) => (
+            <article
+              key={project.id}
+              className="group relative flex min-h-[240px] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/55 p-4 transition hover:-translate-y-0.5 hover:border-slate-500 hover:bg-slate-900/80"
+              style={{ borderTopColor: project.color, borderTopWidth: '3px' }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <button onClick={() => onOpenTasks('all', project.synthetic ? null : project.id)} className="min-w-0 text-left">
+                  <span className="block truncate text-lg font-bold text-white">{project.emoji} {project.name}</span>
+                  {parent && <span className="mt-1 inline-flex rounded-md border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-200">↳ dentro {parent.emoji} {parent.name}</span>}
+                  <span className="mt-1 block truncate text-xs text-slate-400">{project.description || 'Nessuna descrizione'}</span>
+                </button>
+                <span className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${health.tone}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${health.dot}`} />{health.label}
+                </span>
+              </div>
+
+              <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
+                <span>{open} aperti</span>
+                {overdue > 0 && <span className="font-semibold text-rose-300">· {overdue} scaduti</span>}
+                {high > 0 && <span className="text-amber-300">· {high} alta priorità</span>}
+                <span className="ml-auto">{progress}%</span>
+              </div>
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-slate-700">
+                <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, backgroundColor: project.color }} />
+              </div>
+
+              <div className="mt-4 flex-1 rounded-xl border border-slate-700/80 bg-slate-900/70 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-300">In corso · prossima azione</p>
+                {nextAction ? (
+                  <button onClick={() => onEditTask(nextAction)} className="mt-1.5 w-full text-left">
+                    <span className="line-clamp-2 block text-sm font-semibold leading-snug text-slate-100 hover:text-white">{nextAction.text}</span>
+                    {nextAction.notes && <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-slate-400">📝 {nextAction.notes}</span>}
+                  </button>
+                ) : (
+                  <p className="mt-1.5 text-sm text-slate-500">Nessuna attività aperta</p>
+                )}
+              </div>
+
+              <div className="mt-3 min-h-5 text-xs">
+                {reminder?.remind_at ? (
+                  <button onClick={() => onEditTask(reminder)} className="flex w-full items-center gap-2 text-left text-cyan-200 hover:text-cyan-100">
+                    <span>⏰</span>
+                    <span className="truncate">{formatReminderDate(reminder.remind_at)} · {reminder.text}</span>
+                  </button>
+                ) : (
+                  <span className="text-slate-600">Nessun reminder importante</span>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section aria-labelledby="overview-metrics">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 id="overview-metrics" className="text-lg font-bold text-white">Situazione generale</h2>
+          <span className="text-sm text-slate-400">{openTasks.length} attività aperte</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {metricCards.map(metric => (
+            <button
+              key={metric.label}
+              onClick={() => onOpenTasks(metric.filter)}
+              className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:border-slate-400 ${metric.tone}`}
+            >
+              <span className="block text-3xl font-bold">{metric.value}</span>
+              <span className="mt-1 block font-semibold">{metric.label}</span>
+              <span className="mt-1 block text-xs opacity-70">{metric.helper}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,.75fr)]">
+        <section aria-labelledby="daily-focus" className="rounded-2xl border border-slate-700 bg-slate-800/55 p-4 sm:p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 id="daily-focus" className="text-lg font-bold text-white">Focus operativo</h2>
+              <p className="text-sm text-slate-400">Le prime cose da affrontare, ordinate per urgenza.</p>
+            </div>
+            <span className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-200">Top {focusTasks.length}</span>
+          </div>
+          {focusTasks.length === 0 ? (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-emerald-100">
+              Tutto libero: non ci sono attività aperte.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {focusTasks.map(task => {
+                const project = projects.find(item => item.id === task.project_id);
+                const isOverdue = task.due_date && task.due_date < today;
+                return (
+                  <div key={task.id} className="group flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-900/55 p-3 transition hover:border-slate-500">
+                    <button
+                      onClick={() => onToggleTask(task.id)}
+                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-slate-500 text-transparent transition hover:border-emerald-400 hover:bg-emerald-500/10"
+                      aria-label={`Completa ${task.text}`}
+                    >
+                      ✓
+                    </button>
+                    <button onClick={() => onEditTask(task)} className="min-w-0 flex-1 text-left">
+                      <span className="block font-medium text-slate-100 group-hover:text-white">{task.text}</span>
+                      <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                        {project && <span style={{ color: project.color }}>{project.emoji} {project.name}</span>}
+                        {task.due_date && (
+                          <span className={isOverdue ? 'font-semibold text-rose-300' : task.due_date === today ? 'font-semibold text-sky-300' : ''}>
+                            {isOverdue ? 'Scaduto · ' : task.due_date === today ? 'Oggi · ' : ''}
+                            {new Date(`${task.due_date}T12:00:00`).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}
+                          </span>
+                        )}
+                        <span>{task.priority === 'high' ? 'Priorità alta' : task.priority === 'medium' ? 'Priorità media' : 'Priorità bassa'}</span>
+                      </span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <aside className="space-y-4">
+          <section className="rounded-2xl border border-slate-700 bg-slate-800/55 p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-white">Reminder importanti</h2>
+                <p className="text-sm text-slate-400">I prossimi avvisi ancora da gestire.</p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {importantReminders.map(task => {
+                const project = projects.find(item => item.id === task.project_id);
+                const isLate = task.remind_at ? new Date(task.remind_at) < new Date() : false;
+                return (
+                <button
+                  key={task.id}
+                  onClick={() => onEditTask(task)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900/45 p-3 text-left transition hover:border-slate-500"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="line-clamp-2 min-w-0 text-sm font-semibold text-white">{task.text}</span>
+                    <span className={`shrink-0 text-xs font-semibold ${isLate ? 'text-rose-300' : 'text-cyan-200'}`}>
+                      {isLate ? 'Scaduto' : 'Programmato'}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-400">
+                    <span>⏰ {task.remind_at && formatReminderDate(task.remind_at)}</span>
+                    {project && <span style={{ color: project.color }}>{project.emoji} {project.name}</span>}
+                  </div>
+                </button>
+              )})}
+              {importantReminders.length === 0 && <p className="rounded-xl bg-slate-900/40 p-4 text-sm text-slate-400">Nessun reminder programmato.</p>}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-700 bg-slate-800/55 p-5">
+            <h2 className="font-bold text-white">Da mettere in ordine</h2>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <button onClick={() => onOpenTasks('unscheduled')} className="rounded-xl bg-slate-900/50 p-3 text-left hover:bg-slate-900">
+                <span className="block text-xl font-bold text-white">{unscheduledTasks.length}</span>
+                <span className="text-xs text-slate-400">senza scadenza</span>
+              </button>
+              <button onClick={() => onOpenTasks('all', null)} className="rounded-xl bg-slate-900/50 p-3 text-left hover:bg-slate-900">
+                <span className="block text-xl font-bold text-white">{unassignedTasks.length}</span>
+                <span className="text-xs text-slate-400">senza progetto</span>
+              </button>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 // ============================================
 // MAIN APP
 // ============================================
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'tasks' | 'projects'>('tasks');
+  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'projects'>('overview');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -877,6 +1253,8 @@ export default function Home() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('active');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+  const [unassignedOnly, setUnassignedOnly] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grouped' | 'canvas'>('list');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [backendMode, setBackendMode] = useState<'remote' | 'local'>('remote');
@@ -1042,13 +1420,23 @@ export default function Home() {
     if (filter === 'active' && task.completed) return false;
     if (filter === 'completed' && !task.completed) return false;
     if (selectedProjectId && task.project_id !== selectedProjectId) return false;
+    if (unassignedOnly && task.project_id) return false;
     if (categoryFilter !== 'all' && task.category !== categoryFilter) return false;
+    const today = dateKey();
+    const weekEnd = addDaysKey(7);
+    if (timeFilter === 'overdue' && (!task.due_date || task.due_date >= today)) return false;
+    if (timeFilter === 'today' && task.due_date !== today) return false;
+    if (timeFilter === 'week' && (!task.due_date || task.due_date <= today || task.due_date > weekEnd)) return false;
+    if (timeFilter === 'unscheduled' && task.due_date) return false;
     return true;
   });
 
-  // Sort tasks: high priority first
+  // Sort tasks: overdue and upcoming dates first, then priority.
   const sortedTasks = [...filteredTasks].sort((a, b) => {
     const priorityOrder = { high: 0, medium: 1, low: 2 };
+    if (a.due_date && b.due_date && a.due_date !== b.due_date) return a.due_date.localeCompare(b.due_date);
+    if (a.due_date && !b.due_date) return -1;
+    if (!a.due_date && b.due_date) return 1;
     return priorityOrder[a.priority] - priorityOrder[b.priority];
   });
 
@@ -1071,8 +1459,8 @@ export default function Home() {
   return (
     <main className="min-h-screen text-white bg-slate-900">
       {/* Header */}
-      <header className="border-b-2 border-slate-700 bg-slate-800 sticky top-0 z-30 shadow-lg">
-        <div className="max-w-4xl mx-auto px-4 py-4">
+      <header className="border-b border-slate-700 bg-slate-800 shadow-lg">
+        <div className="mx-auto max-w-[1500px] px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-white">⚡ SwitchBoard</h1>
@@ -1121,8 +1509,8 @@ export default function Home() {
             </div>
           )}
           
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-3 mt-4">
+          {/* Compact counters remain useful in the operational views. */}
+          {activeTab !== 'overview' && <div className="grid grid-cols-3 gap-3 mt-4">
             <div className="bg-slate-700 rounded-xl p-3 text-center border-2 border-slate-600">
               <div className="text-2xl font-bold text-white">{totalTasks - completedTasks}</div>
               <div className="text-xs text-slate-400 font-medium">Da fare</div>
@@ -1135,26 +1523,34 @@ export default function Home() {
               <div className="text-2xl font-bold text-green-400">{completedTasks}</div>
               <div className="text-xs text-green-400 font-medium">Completati</div>
             </div>
-          </div>
+          </div>}
         </div>
       </header>
 
       {/* Tab Navigation */}
-      <nav className="border-b-2 border-slate-700 bg-slate-800/50">
-        <div className="max-w-4xl mx-auto px-4">
-          <div className="flex gap-4 py-3">
+      <nav className="border-b border-slate-700 bg-slate-900/80 sticky top-0 z-20 backdrop-blur-xl">
+        <div className="mx-auto max-w-[1500px] px-4">
+          <div className="flex gap-2 overflow-x-auto py-3">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`whitespace-nowrap px-4 py-2 rounded-xl font-semibold transition-colors ${
+                activeTab === 'overview' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              ☀️ Oggi
+            </button>
             <button
               onClick={() => setActiveTab('tasks')}
-              className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
-                activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              className={`whitespace-nowrap px-4 py-2 rounded-xl font-semibold transition-colors ${
+                activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
             >
               ✅ Task
             </button>
             <button
               onClick={() => setActiveTab('projects')}
-              className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
-                activeTab === 'projects' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              className={`whitespace-nowrap px-4 py-2 rounded-xl font-semibold transition-colors ${
+                activeTab === 'projects' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
             >
               📊 Progetti
@@ -1164,7 +1560,23 @@ export default function Home() {
       </nav>
 
       {/* Content */}
-      <div className="max-w-4xl mx-auto px-4 py-6">
+      <div className="mx-auto max-w-[1500px] px-4 py-6">
+        {activeTab === 'overview' && (
+          <OverviewDashboard
+            tasks={tasks}
+            projects={projects}
+            onToggleTask={handleToggleTask}
+            onEditTask={setEditingTask}
+            onOpenTasks={(nextTimeFilter, projectId) => {
+              setFilter('active');
+              setTimeFilter(nextTimeFilter);
+              setUnassignedOnly(projectId === null);
+              setSelectedProjectId(projectId && projectId.length > 0 ? projectId : null);
+              setActiveTab('tasks');
+            }}
+            onOpenProjects={() => setActiveTab('projects')}
+          />
+        )}
         
         {activeTab === 'tasks' && (
           <div>
@@ -1185,6 +1597,19 @@ export default function Home() {
                   </button>
                 ))}
               </div>
+
+              <select
+                value={timeFilter}
+                onChange={(e) => setTimeFilter(e.target.value as TimeFilter)}
+                aria-label="Filtra per scadenza"
+                className="bg-slate-800 border-2 border-slate-700 rounded-lg px-3 py-1 text-sm font-medium focus:outline-none text-white"
+              >
+                <option value="all">Qualsiasi scadenza</option>
+                <option value="overdue">🚨 Scaduti</option>
+                <option value="today">☀️ Oggi</option>
+                <option value="week">🗓️ Prossimi 7 giorni</option>
+                <option value="unscheduled">Senza data</option>
+              </select>
               
               <select
                 value={categoryFilter}
@@ -1200,10 +1625,13 @@ export default function Home() {
 
               <select
                 value={selectedProjectId || ''}
-                onChange={(e) => setSelectedProjectId(e.target.value || null)}
+                onChange={(e) => {
+                  setSelectedProjectId(e.target.value || null);
+                  setUnassignedOnly(false);
+                }}
                 className="bg-slate-800 border-2 border-slate-700 rounded-lg px-3 py-1 text-sm font-medium focus:outline-none text-white"
               >
-                <option value="">Tutti i progetti</option>
+                <option value="">{unassignedOnly ? '📋 Senza progetto' : 'Tutti i progetti'}</option>
                 {projects.map(p => (
                   <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
                 ))}
@@ -1386,6 +1814,7 @@ export default function Home() {
         isOpen={showAddProject}
         onClose={() => setShowAddProject(false)}
         onAdd={handleAddProject}
+        projects={projects}
       />
       
       <EditProjectModal
@@ -1393,6 +1822,7 @@ export default function Home() {
         isOpen={!!editingProject}
         onClose={() => setEditingProject(null)}
         project={editingProject}
+        projects={projects}
         onSave={handleUpdateProject}
         onDelete={handleDeleteProject}
       />

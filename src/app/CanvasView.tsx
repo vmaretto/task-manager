@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { Task, Project } from '../lib/supabase';
 
 const POSITIONS_KEY = 'switchboard.canvas-positions';
@@ -42,7 +42,7 @@ export default function CanvasView({
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [positions, setPositions] = useState<Record<string, CardPos>>({});
+  const [positions, setPositions] = useState<Record<string, CardPos>>(loadPositions);
   const [draggingCard, setDraggingCard] = useState<string | null>(null);
   const [dragStart, setDragStart] = useState<{ mx: number; my: number; cx: number; cy: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -50,19 +50,10 @@ export default function CanvasView({
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
-  useEffect(() => {
-    const saved = loadPositions();
-    const ids = [...projects.map(p => p.id), '__none__'];
-    const hasAll = ids.every(id => saved[id]);
-    if (hasAll) {
-      setPositions(saved);
-    } else {
-      const def = defaultPositions(projects);
-      const merged = { ...def, ...saved };
-      setPositions(merged);
-      savePositions(merged);
-    }
-  }, [projects]);
+  const visiblePositions = useMemo(
+    () => ({ ...defaultPositions(projects), ...positions }),
+    [projects, positions],
+  );
 
   const tasksByProject = useCallback(() => {
     const map = new Map<string | null, Task[]>();
@@ -100,7 +91,7 @@ export default function CanvasView({
       const newX = dragStart.cx + (e.clientX - dragStart.mx) / zoom;
       const newY = dragStart.cy + (e.clientY - dragStart.my) / zoom;
       setPositions(prev => {
-        const next = { ...prev, [draggingCard]: { x: newX, y: newY } };
+        const next = { ...visiblePositions, ...prev, [draggingCard]: { x: newX, y: newY } };
         return next;
       });
     }
@@ -108,7 +99,7 @@ export default function CanvasView({
 
   const handleMouseUp = () => {
     if (draggingCard) {
-      savePositions(positions);
+      savePositions(visiblePositions);
     }
     setIsPanning(false);
     setPanStart(null);
@@ -118,7 +109,7 @@ export default function CanvasView({
 
   const handleCardMouseDown = (e: React.MouseEvent, cardId: string) => {
     e.stopPropagation();
-    const pos = positions[cardId];
+    const pos = visiblePositions[cardId];
     if (!pos) return;
     setDraggingCard(cardId);
     setDragStart({ mx: e.clientX, my: e.clientY, cx: pos.x, cy: pos.y });
@@ -152,7 +143,7 @@ export default function CanvasView({
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0', position: 'absolute', inset: 0 }}
       >
         {cards.map(card => {
-          const pos = positions[card.id];
+          const pos = visiblePositions[card.id];
           if (!pos) return null;
           const cardTasks = tMap.get(card.id === '__none__' ? null : card.id) ?? [];
           const isExpanded = expandedCard === card.id;
@@ -225,6 +216,12 @@ export default function CanvasView({
                         onMouseDown={(e) => e.stopPropagation()}
                         className="text-slate-500 hover:text-blue-400 text-xs flex-shrink-0"
                       >✏️</button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDeleteTask(task.id); }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="text-slate-500 hover:text-red-400 text-xs flex-shrink-0"
+                        title="Elimina task"
+                      >🗑️</button>
                     </div>
                   ))}
                 </div>

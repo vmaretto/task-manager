@@ -26,6 +26,7 @@ export interface Project {
   color: string;
   emoji: string;
   description: string;
+  parent_project_id: string | null;
 }
 
 type BackendMode = 'remote' | 'local';
@@ -59,6 +60,7 @@ const defaultProjects: Project[] = [
     color: '#10b981',
     emoji: '🌱',
     description: 'Direttore Operativo - Universita della Tuscia',
+    parent_project_id: null,
   },
   {
     id: '22222222-2222-2222-2222-222222222222',
@@ -67,6 +69,7 @@ const defaultProjects: Project[] = [
     color: '#3b82f6',
     emoji: '🇪🇺',
     description: 'Horizon Europe - Food Hub',
+    parent_project_id: null,
   },
   {
     id: '44444444-4444-4444-4444-444444444444',
@@ -75,6 +78,7 @@ const defaultProjects: Project[] = [
     color: '#f43f5e',
     emoji: '🍎',
     description: 'Progetto EU LIFE - App riconoscimento cibo',
+    parent_project_id: null,
   },
   {
     id: '55555555-5555-5555-5555-555555555555',
@@ -83,6 +87,7 @@ const defaultProjects: Project[] = [
     color: '#a855f7',
     emoji: '🏡',
     description: 'Valorizzazione territoriale Comune di Tolfa',
+    parent_project_id: null,
   },
 ];
 
@@ -150,7 +155,7 @@ function writeTasksLocal(tasks: Task[]) {
 
 function readProjectsLocal() {
   ensureLocalSeeds();
-  return readLocal<Project[]>(PROJECTS_KEY, defaultProjects);
+  return readLocal<Project[]>(PROJECTS_KEY, defaultProjects).map(normalizeProject);
 }
 
 function writeProjectsLocal(projects: Project[]) {
@@ -196,7 +201,19 @@ function sortTasks(tasks: Task[]) {
 }
 
 function sortProjects(projects: Project[]) {
-  return [...projects].sort((a, b) => a.name.localeCompare(b.name));
+  return [...projects].map(normalizeProject).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function normalizeProject(project: Partial<Project>): Project {
+  return {
+    id: project.id ?? '',
+    name: project.name ?? '',
+    status: project.status ?? 'backlog',
+    color: project.color ?? '#3b82f6',
+    emoji: project.emoji ?? '📁',
+    description: project.description ?? '',
+    parent_project_id: project.parent_project_id ?? null,
+  };
 }
 
 async function detectBackendMode(forceRefresh = false): Promise<BackendMode> {
@@ -261,7 +278,7 @@ function replaceTaskLocal(task: Task) {
 
 function replaceProjectLocal(project: Project) {
   const projects = readProjectsLocal();
-  writeProjectsLocal([...projects.filter((item) => item.id !== project.id), project]);
+  writeProjectsLocal([...projects.filter((item) => item.id !== project.id), normalizeProject(project)]);
 }
 
 function deleteTaskLocal(id: string) {
@@ -285,7 +302,7 @@ async function loadRemoteProjects() {
     .order('name');
 
   if (error) throw error;
-  return data || [];
+  return (data || []).map(normalizeProject);
 }
 
 export async function getBackendMode(): Promise<BackendMode> {
@@ -493,7 +510,7 @@ export async function addProject(project: Omit<Project, 'id'>): Promise<Project 
   const mode = await detectBackendMode();
 
   if (mode === 'local') {
-    const newProject: Project = { ...project, id: makeId() };
+    const newProject: Project = normalizeProject({ ...project, id: makeId() });
     replaceProjectLocal(newProject);
     queueOperation({ entity: 'project', type: 'upsert', id: newProject.id });
     return newProject;
@@ -507,8 +524,8 @@ export async function addProject(project: Omit<Project, 'id'>): Promise<Project 
       .single();
 
     if (error) throw error;
-    replaceProjectLocal(data);
-    return data;
+    replaceProjectLocal(normalizeProject(data));
+    return normalizeProject(data);
   } catch (error) {
     console.error('Error adding project, falling back to local mode:', error);
     setLocalMode();
@@ -544,7 +561,7 @@ export async function updateProject(id: string, updates: Partial<Project>): Prom
     const current = readProjectsLocal().find((project) => project.id === id);
     if (!current) return null;
 
-    const updated = { ...current, ...updates };
+    const updated = normalizeProject({ ...current, ...updates });
     replaceProjectLocal(updated);
     queueOperation({ entity: 'project', type: 'upsert', id });
     return updated;
@@ -559,8 +576,8 @@ export async function updateProject(id: string, updates: Partial<Project>): Prom
       .single();
 
     if (error) throw error;
-    replaceProjectLocal(data);
-    return data;
+    replaceProjectLocal(normalizeProject(data));
+    return normalizeProject(data);
   } catch (error) {
     console.error('Error updating project, falling back to local mode:', error);
     setLocalMode();
