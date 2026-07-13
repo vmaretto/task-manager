@@ -27,6 +27,7 @@ export interface Project {
   emoji: string;
   description: string;
   parent_project_id: string | null;
+  is_area: boolean;
 }
 
 type BackendMode = 'remote' | 'local';
@@ -61,6 +62,7 @@ const defaultProjects: Project[] = [
     emoji: '🌱',
     description: 'Direttore Operativo - Universita della Tuscia',
     parent_project_id: null,
+    is_area: false,
   },
   {
     id: '22222222-2222-2222-2222-222222222222',
@@ -70,6 +72,7 @@ const defaultProjects: Project[] = [
     emoji: '🇪🇺',
     description: 'Horizon Europe - Food Hub',
     parent_project_id: null,
+    is_area: false,
   },
   {
     id: '44444444-4444-4444-4444-444444444444',
@@ -79,6 +82,7 @@ const defaultProjects: Project[] = [
     emoji: '🍎',
     description: 'Progetto EU LIFE - App riconoscimento cibo',
     parent_project_id: null,
+    is_area: false,
   },
   {
     id: '55555555-5555-5555-5555-555555555555',
@@ -88,6 +92,7 @@ const defaultProjects: Project[] = [
     emoji: '🏡',
     description: 'Valorizzazione territoriale Comune di Tolfa',
     parent_project_id: null,
+    is_area: false,
   },
 ];
 
@@ -213,6 +218,7 @@ function normalizeProject(project: Partial<Project>): Project {
     emoji: project.emoji ?? '📁',
     description: project.description ?? '',
     parent_project_id: project.parent_project_id ?? null,
+    is_area: project.is_area ?? false,
   };
 }
 

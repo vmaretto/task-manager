@@ -274,6 +274,122 @@ function KanbanColumn({
   );
 }
 
+function AreaColumn({
+  area,
+  projects,
+  tasks,
+  onMoveProject,
+  onEditProject,
+}: {
+  area: Project | null;
+  projects: Project[];
+  tasks: Task[];
+  onMoveProject: (projectId: string, areaId: string | null) => void;
+  onEditProject: (project: Project) => void;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+  const children = projects.filter(project => !project.is_area && project.parent_project_id === (area?.id ?? null));
+  const childIds = new Set(children.map(project => project.id));
+  const relevantTasks = tasks.filter(task => task.project_id && (childIds.has(task.project_id) || task.project_id === area?.id));
+  const openTasks = relevantTasks.filter(task => !task.completed);
+  const today = dateKey();
+  const overdue = openTasks.filter(task => task.due_date && task.due_date < today).length;
+
+  return (
+    <section
+      className={`min-h-[260px] rounded-2xl border-2 p-4 transition ${dragOver ? 'border-blue-400 bg-blue-500/10' : 'border-slate-700 bg-slate-800/55'}`}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes('application/project-id')) {
+          event.preventDefault();
+          setDragOver(true);
+        }
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragOver(false);
+        const projectId = event.dataTransfer.getData('application/project-id');
+        if (projectId) onMoveProject(projectId, area?.id ?? null);
+      }}
+    >
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xl">{area?.emoji ?? '🧺'}</span>
+            <h3 className="font-bold text-white">{area?.name ?? 'Senza area'}</h3>
+          </div>
+          <p className="mt-1 text-xs text-slate-400">{children.length} progetti · {openTasks.length} task aperti</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {overdue > 0 && <span className="rounded-full bg-rose-500/15 px-2 py-1 text-xs font-semibold text-rose-300">{overdue} scaduti</span>}
+          {area && <button onClick={() => onEditProject(area)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-700 hover:text-white" title="Modifica area">✏️</button>}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {children.map(project => {
+          const projectTasks = tasks.filter(task => task.project_id === project.id && !task.completed);
+          const projectOverdue = projectTasks.filter(task => task.due_date && task.due_date < today).length;
+          return (
+            <div
+              key={project.id}
+              draggable
+              onDragStart={(event) => {
+                event.dataTransfer.setData('application/project-id', project.id);
+                event.dataTransfer.effectAllowed = 'move';
+              }}
+              className="cursor-grab rounded-xl border border-slate-700 bg-slate-900/65 p-3 active:cursor-grabbing"
+              style={{ borderLeft: `4px solid ${project.color}` }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-white">{project.emoji} {project.name}</p>
+                  <p className="mt-1 text-xs text-slate-400">{projectTasks.length} aperti{projectOverdue > 0 ? ` · ${projectOverdue} scaduti` : ''}</p>
+                </div>
+                <button onClick={() => onEditProject(project)} className="shrink-0 rounded p-1 text-xs text-slate-500 hover:text-blue-300" title="Modifica progetto">✏️</button>
+              </div>
+            </div>
+          );
+        })}
+        {children.length === 0 && (
+          <div className="rounded-xl border border-dashed border-slate-600 p-5 text-center text-sm text-slate-500">
+            Trascina qui un progetto
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AreaBoard({
+  projects,
+  tasks,
+  onMoveProject,
+  onEditProject,
+}: {
+  projects: Project[];
+  tasks: Task[];
+  onMoveProject: (projectId: string, areaId: string | null) => void;
+  onEditProject: (project: Project) => void;
+}) {
+  const areas = projects.filter(project => project.is_area);
+
+  return (
+    <div>
+      <div className="mb-5">
+        <h2 className="text-2xl font-bold text-white">Territori di lavoro</h2>
+        <p className="mt-1 text-sm text-slate-400">Trascina ogni progetto nella sua area. La colonna “Senza area” raccoglie ciò che deve ancora essere classificato.</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {areas.map(area => (
+          <AreaColumn key={area.id} area={area} projects={projects} tasks={tasks} onMoveProject={onMoveProject} onEditProject={onEditProject} />
+        ))}
+        <AreaColumn area={null} projects={projects} tasks={tasks} onMoveProject={onMoveProject} onEditProject={onEditProject} />
+      </div>
+    </div>
+  );
+}
+
 function EditTaskModal({ 
   isOpen, 
   onClose, 
@@ -690,20 +806,21 @@ function EditProjectModal({
   onSave: (projectId: string, updates: Partial<Project>) => void;
   onDelete: (projectId: string) => void;
 }) {
-  const initial = project ?? { id: '', name: '', description: '', emoji: '📁', color: '#3b82f6', status: 'backlog' as const, parent_project_id: null };
+  const initial = project ?? { id: '', name: '', description: '', emoji: '📁', color: '#3b82f6', status: 'backlog' as const, parent_project_id: null, is_area: false };
   const [name, setName] = useState(initial.name);
   const [description, setDescription] = useState(initial.description);
   const [emoji, setEmoji] = useState(initial.emoji);
   const [color, setColor] = useState(initial.color);
   const [status, setStatus] = useState(initial.status);
   const [parentProjectId, setParentProjectId] = useState<string | null>(initial.parent_project_id);
+  const [isArea, setIsArea] = useState(initial.is_area);
 
   if (!isOpen || !project) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
-      onSave(project.id, { name: name.trim(), description: description.trim(), emoji, color, status, parent_project_id: parentProjectId });
+      onSave(project.id, { name: name.trim(), description: description.trim(), emoji, color, status, parent_project_id: isArea ? null : parentProjectId, is_area: isArea });
       onClose();
     }
   };
@@ -734,7 +851,14 @@ function EditProjectModal({
               <option value="done">✅ Completato</option>
             </select>
           </div>
-          <div>
+          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-600 bg-slate-700/50 p-3">
+            <input type="checkbox" checked={isArea} onChange={(e) => setIsArea(e.target.checked)} className="h-5 w-5 accent-blue-500" />
+            <span>
+              <span className="block text-sm font-semibold text-white">Questa è un’area</span>
+              <span className="block text-xs text-slate-400">Può contenere e organizzare altri progetti.</span>
+            </span>
+          </label>
+          {!isArea && <div>
             <label className="block text-sm text-slate-300 mb-1 font-medium">Area / progetto padre</label>
             <select
               value={parentProjectId ?? ''}
@@ -743,13 +867,13 @@ function EditProjectModal({
             >
               <option value="">Nessuna — progetto principale</option>
               {projects
-                .filter(candidate => !invalidParentIds.has(candidate.id))
+                .filter(candidate => candidate.is_area && !invalidParentIds.has(candidate.id))
                 .map(candidate => (
                   <option key={candidate.id} value={candidate.id}>{candidate.emoji} {candidate.name}</option>
                 ))}
             </select>
             <p className="mt-1 text-xs text-slate-400">Esempio: assegna un sottoprogetto all’area POSTI.</p>
-          </div>
+          </div>}
           <div>
             <label className="block text-sm text-slate-300 mb-2 font-medium">Emoji</label>
             <div className="flex flex-wrap gap-2">
@@ -788,11 +912,13 @@ function AddProjectModal({
   onClose, 
   onAdd,
   projects,
+  defaultIsArea = false,
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
   onAdd: (project: Omit<Project, 'id'>) => void;
   projects: Project[];
+  defaultIsArea?: boolean;
 }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -810,8 +936,9 @@ function AddProjectModal({
         description: description.trim(),
         emoji,
         color,
-        status: 'backlog',
-        parent_project_id: parentProjectId,
+        status: defaultIsArea ? 'active' : 'backlog',
+        parent_project_id: defaultIsArea ? null : parentProjectId,
+        is_area: defaultIsArea,
       });
       setName('');
       setDescription('');
@@ -831,7 +958,7 @@ function AddProjectModal({
         className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border-2 border-slate-600 shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
-        <h3 className="text-xl font-bold mb-4 text-white">📁 Nuovo Progetto</h3>
+        <h3 className="text-xl font-bold mb-4 text-white">{defaultIsArea ? '🗂️ Nuova Area' : '📁 Nuovo Progetto'}</h3>
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -857,7 +984,7 @@ function AddProjectModal({
             />
           </div>
 
-          <div>
+          {!defaultIsArea && <div>
             <label className="block text-sm text-slate-300 mb-1 font-medium">Area / progetto padre</label>
             <select
               value={parentProjectId ?? ''}
@@ -865,11 +992,11 @@ function AddProjectModal({
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
             >
               <option value="">Nessuna — progetto principale</option>
-              {projects.map(candidate => (
+              {projects.filter(candidate => candidate.is_area).map(candidate => (
                 <option key={candidate.id} value={candidate.id}>{candidate.emoji} {candidate.name}</option>
               ))}
             </select>
-          </div>
+          </div>}
           
           <div>
             <label className="block text-sm text-slate-300 mb-2 font-medium">Emoji</label>
@@ -986,6 +1113,7 @@ function OverviewDashboard({
       emoji: '🧭',
       description: 'Attività non ancora assegnate a un progetto',
       parent_project_id: null,
+      is_area: true,
       synthetic: true,
     },
   ];
@@ -1058,8 +1186,8 @@ function OverviewDashboard({
           <div className="flex flex-wrap gap-2 text-xs font-semibold">
             <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-rose-200">● {projectOverview.filter(item => item.health.label === 'Critico').length} critici</span>
             <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-amber-200">● {projectOverview.filter(item => item.health.label === 'Attenzione').length} da seguire</span>
-            <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-blue-200">{projects.filter(project => !project.parent_project_id).length} aree · {projects.filter(project => project.parent_project_id).length} sottoprogetti</span>
-            <button onClick={onOpenProjects} className="rounded-full border border-slate-600 bg-slate-800 px-3 py-1.5 text-slate-200 hover:border-slate-400">Gestisci progetti →</button>
+            <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-blue-200">{projects.filter(project => project.is_area).length} aree · {projects.filter(project => !project.is_area).length} progetti</span>
+            <button onClick={onOpenProjects} className="rounded-full border border-slate-600 bg-slate-800 px-3 py-1.5 text-slate-200 hover:border-slate-400">Gestisci aree →</button>
           </div>
         </div>
 
@@ -1242,13 +1370,14 @@ function OverviewDashboard({
 // MAIN APP
 // ============================================
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'projects'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'areas' | 'projects'>('overview');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showAddProject, setShowAddProject] = useState(false);
+  const [showAddArea, setShowAddArea] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('active');
@@ -1415,6 +1544,14 @@ export default function Home() {
     }
   };
 
+  const handleMoveProjectToArea = async (projectId: string, areaId: string | null) => {
+    const updated = await updateProject(projectId, { parent_project_id: areaId });
+    if (updated) {
+      setProjects(prev => prev.map(project => project.id === projectId ? updated : project));
+      refreshSyncStatus();
+    }
+  };
+
   // Filter tasks
   const filteredTasks = tasks.filter(task => {
     if (filter === 'active' && task.completed) return false;
@@ -1480,6 +1617,12 @@ export default function Home() {
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold"
               >
                 + Progetto
+              </button>
+              <button
+                onClick={() => setShowAddArea(true)}
+                className="bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-xl text-sm font-semibold"
+              >
+                + Area
               </button>
             </div>
           </div>
@@ -1548,6 +1691,14 @@ export default function Home() {
               ✅ Task
             </button>
             <button
+              onClick={() => setActiveTab('areas')}
+              className={`whitespace-nowrap px-4 py-2 rounded-xl font-semibold transition-colors ${
+                activeTab === 'areas' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              🗂️ Aree
+            </button>
+            <button
               onClick={() => setActiveTab('projects')}
               className={`whitespace-nowrap px-4 py-2 rounded-xl font-semibold transition-colors ${
                 activeTab === 'projects' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -1574,7 +1725,7 @@ export default function Home() {
               setSelectedProjectId(projectId && projectId.length > 0 ? projectId : null);
               setActiveTab('tasks');
             }}
-            onOpenProjects={() => setActiveTab('projects')}
+            onOpenProjects={() => setActiveTab('areas')}
           />
         )}
         
@@ -1758,6 +1909,15 @@ export default function Home() {
           </div>
         )}
 
+        {activeTab === 'areas' && (
+          <AreaBoard
+            projects={projects}
+            tasks={tasks}
+            onMoveProject={handleMoveProjectToArea}
+            onEditProject={setEditingProject}
+          />
+        )}
+
         {activeTab === 'projects' && (
           <div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1815,6 +1975,15 @@ export default function Home() {
         onClose={() => setShowAddProject(false)}
         onAdd={handleAddProject}
         projects={projects}
+      />
+
+      <AddProjectModal
+        key="add-area"
+        isOpen={showAddArea}
+        onClose={() => setShowAddArea(false)}
+        onAdd={handleAddProject}
+        projects={projects}
+        defaultIsArea
       />
       
       <EditProjectModal
