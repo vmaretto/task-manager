@@ -173,12 +173,12 @@ export default function CanvasView({
                 className={`rounded-xl p-3 transition-all ${isDrop ? 'ring-2 ring-white scale-105' : ''}`}
                 style={{ backgroundColor: '#1e293b', borderLeft: `4px solid ${card.color}`, border: isDrop ? `2px solid ${card.color}` : '2px solid #334155' }}
               >
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">{card.emoji}</span>
-                    <span className="font-semibold text-sm text-white truncate">{card.label}</span>
+                <div className="mb-1 flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 flex-1 items-start gap-2">
+                    <span className="shrink-0 text-base">{card.emoji}</span>
+                    <span className="min-w-0 break-words text-left text-sm font-semibold leading-snug text-white">{card.label}</span>
                   </div>
-                  <span className="text-xs text-slate-400 font-mono bg-slate-700 px-2 py-0.5 rounded">{cardTasks.length}</span>
+                  <span className="shrink-0 rounded bg-slate-700 px-2 py-0.5 font-mono text-xs text-slate-400">{cardTasks.length}</span>
                 </div>
                 <button
                   onClick={(e) => { e.stopPropagation(); setExpandedCard(isExpanded ? null : card.id); }}

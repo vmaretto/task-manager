@@ -354,7 +354,7 @@ function AreaColumn({
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-white">{project.emoji} {project.name}</p>
+                  <p className="break-words text-left text-sm font-semibold leading-snug text-white">{project.emoji} {project.name}</p>
                   <p className="mt-1 text-xs text-slate-400">{projectTasks.length} aperti{projectOverdue > 0 ? ` · ${projectOverdue} scaduti` : ''}</p>
                 </div>
                 <button
@@ -617,23 +617,29 @@ function EditTaskModal({
 
 function AddTaskModal({ 
   isOpen, 
-  onClose, 
+  onClose,
   onAdd,
-  projects 
+  projects,
+  defaultProjectId = null,
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
   onAdd: (task: Omit<Task, 'id' | 'created_at'>) => void;
   projects: Project[];
+  defaultProjectId?: string | null;
 }) {
   const [text, setText] = useState('');
   const [notes, setNotes] = useState('');
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [category, setCategory] = useState<'work' | 'admin' | 'personal' | 'travel'>('work');
-  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(defaultProjectId);
   const [dueDate, setDueDate] = useState('');
   const [remindAt, setRemindAt] = useState('');
   const [reminderChannel, setReminderChannel] = useState<'telegram' | 'email'>('telegram');
+
+  useEffect(() => {
+    if (isOpen) setProjectId(defaultProjectId);
+  }, [isOpen, defaultProjectId]);
 
   if (!isOpen) return null;
 
@@ -1397,6 +1403,7 @@ export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [taskReturnTab, setTaskReturnTab] = useState<'overview' | 'areas' | 'projects'>('areas');
   const [showAddTask, setShowAddTask] = useState(false);
   const [showAddProject, setShowAddProject] = useState(false);
   const [showAddArea, setShowAddArea] = useState(false);
@@ -1574,6 +1581,17 @@ export default function Home() {
     }
   };
 
+  const handleOpenProject = (projectId: string, returnTab: 'overview' | 'areas' | 'projects' = 'areas') => {
+    setSelectedProjectId(projectId);
+    setTaskReturnTab(returnTab);
+    setUnassignedOnly(false);
+    setFilter('all');
+    setCategoryFilter('all');
+    setTimeFilter('all');
+    setViewMode('list');
+    setActiveTab('tasks');
+  };
+
   // Filter tasks
   const filteredTasks = tasks.filter(task => {
     if (filter === 'active' && task.completed) return false;
@@ -1603,6 +1621,10 @@ export default function Home() {
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter(t => t.completed).length;
   const highPriorityTasks = tasks.filter(t => !t.completed && t.priority === 'high').length;
+  const selectedProject = selectedProjectId ? projects.find(project => project.id === selectedProjectId) : undefined;
+  const selectedProjectTasks = selectedProjectId ? tasks.filter(task => task.project_id === selectedProjectId) : [];
+  const selectedProjectOpenTasks = selectedProjectTasks.filter(task => !task.completed).length;
+  const selectedProjectCompletedTasks = selectedProjectTasks.length - selectedProjectOpenTasks;
 
   if (loading) {
     return (
@@ -1741,10 +1763,12 @@ export default function Home() {
             onToggleTask={handleToggleTask}
             onEditTask={setEditingTask}
             onOpenTasks={(nextTimeFilter, projectId) => {
+              setTaskReturnTab('overview');
               setFilter('active');
               setTimeFilter(nextTimeFilter);
               setUnassignedOnly(projectId === null);
               setSelectedProjectId(projectId && projectId.length > 0 ? projectId : null);
+              setViewMode('list');
               setActiveTab('tasks');
             }}
             onOpenProjects={() => setActiveTab('areas')}
@@ -1753,6 +1777,44 @@ export default function Home() {
         
         {activeTab === 'tasks' && (
           <div>
+            {selectedProject && (
+              <section
+                className="mb-5 rounded-2xl border border-slate-700 bg-slate-800/70 p-4 shadow-lg"
+                style={{ borderLeft: `6px solid ${selectedProject.color}` }}
+                aria-label={`Progetto ${selectedProject.name}`}
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <button
+                      onClick={() => {
+                        setSelectedProjectId(null);
+                        setActiveTab(taskReturnTab);
+                      }}
+                      className="mb-3 inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-900/60 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-blue-400 hover:text-white"
+                    >
+                      ← Torna indietro
+                    </button>
+                    <div className="flex items-start gap-3">
+                      <span className="text-3xl" aria-hidden="true">{selectedProject.emoji}</span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-300">Progetto aperto</p>
+                        <h2 className="break-words text-2xl font-bold leading-tight text-white">{selectedProject.name}</h2>
+                        {selectedProject.description && (
+                          <p className="mt-2 max-w-4xl break-words text-justify text-sm leading-relaxed text-slate-300">
+                            {selectedProject.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 gap-2 text-sm">
+                    <span className="rounded-full bg-blue-500/15 px-3 py-1.5 font-semibold text-blue-200">{selectedProjectOpenTasks} aperti</span>
+                    <span className="rounded-full bg-emerald-500/15 px-3 py-1.5 font-semibold text-emerald-200">{selectedProjectCompletedTasks} completati</span>
+                  </div>
+                </div>
+              </section>
+            )}
+
             <QuickCapture onAdd={handleQuickAdd} />
             
             {/* Filters */}
@@ -1834,9 +1896,39 @@ export default function Home() {
 
             {/* Task List */}
             {sortedTasks.length === 0 ? (
-              <div className="text-center py-12 text-slate-500">
-                <div className="text-4xl mb-4">🎉</div>
-                <p>Nessun task da mostrare!</p>
+              <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-800/30 px-5 py-12 text-center text-slate-400">
+                <div className="mb-4 text-4xl">{selectedProject ? selectedProject.emoji : '🎉'}</div>
+                <h3 className="text-lg font-bold text-white">
+                  {selectedProject && selectedProjectTasks.length === 0
+                    ? `${selectedProject.name} non ha ancora task`
+                    : selectedProject
+                      ? `Nessun task di ${selectedProject.name} corrisponde ai filtri`
+                      : 'Nessun task da mostrare'}
+                </h3>
+                <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed">
+                  {selectedProject && selectedProjectTasks.length === 0
+                    ? 'Il progetto è aperto correttamente: puoi inserire qui la prima attività.'
+                    : 'Prova a reimpostare i filtri oppure aggiungi una nuova attività.'}
+                </p>
+                <div className="mt-5 flex flex-wrap justify-center gap-2">
+                  {selectedProject && (
+                    <button onClick={() => setShowAddTask(true)} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                      + Aggiungi task a {selectedProject.name}
+                    </button>
+                  )}
+                  {selectedProjectTasks.length > 0 && (
+                    <button
+                      onClick={() => {
+                        setFilter('all');
+                        setCategoryFilter('all');
+                        setTimeFilter('all');
+                      }}
+                      className="rounded-xl border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400"
+                    >
+                      Reimposta filtri
+                    </button>
+                  )}
+                </div>
               </div>
             ) : viewMode === 'list' ? (
               <div className="space-y-3">
@@ -1936,10 +2028,7 @@ export default function Home() {
             projects={projects}
             tasks={tasks}
             onMoveProject={handleMoveProjectToArea}
-            onOpenProject={(projectId) => {
-              setSelectedProjectId(projectId);
-              setActiveTab('tasks');
-            }}
+            onOpenProject={(projectId) => handleOpenProject(projectId, 'areas')}
             onEditProject={setEditingProject}
           />
         )}
@@ -1953,8 +2042,7 @@ export default function Home() {
                 projects={projects}
                 onMoveProject={handleMoveProject}
                 onSelectProject={(id) => {
-                  setSelectedProjectId(id);
-                  if (id) setActiveTab('tasks');
+                  if (id) handleOpenProject(id, 'projects');
                 }}
                 onEditProject={setEditingProject}
                 selectedProjectId={selectedProjectId}
@@ -1965,8 +2053,7 @@ export default function Home() {
                 projects={projects}
                 onMoveProject={handleMoveProject}
                 onSelectProject={(id) => {
-                  setSelectedProjectId(id);
-                  if (id) setActiveTab('tasks');
+                  if (id) handleOpenProject(id, 'projects');
                 }}
                 onEditProject={setEditingProject}
                 selectedProjectId={selectedProjectId}
@@ -1977,8 +2064,7 @@ export default function Home() {
                 projects={projects}
                 onMoveProject={handleMoveProject}
                 onSelectProject={(id) => {
-                  setSelectedProjectId(id);
-                  if (id) setActiveTab('tasks');
+                  if (id) handleOpenProject(id, 'projects');
                 }}
                 onEditProject={setEditingProject}
                 selectedProjectId={selectedProjectId}
@@ -1990,10 +2076,12 @@ export default function Home() {
 
       {/* Modals */}
       <AddTaskModal
+        key={selectedProjectId ?? 'add-task'}
         isOpen={showAddTask}
         onClose={() => setShowAddTask(false)}
         onAdd={handleAddTask}
         projects={projects}
+        defaultProjectId={selectedProjectId}
       />
       
       <AddProjectModal
