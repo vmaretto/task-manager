@@ -279,12 +279,14 @@ function AreaColumn({
   projects,
   tasks,
   onMoveProject,
+  onOpenProject,
   onEditProject,
 }: {
   area: Project | null;
   projects: Project[];
   tasks: Task[];
   onMoveProject: (projectId: string, areaId: string | null) => void;
+  onOpenProject: (projectId: string) => void;
   onEditProject: (project: Project) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
@@ -334,11 +336,20 @@ function AreaColumn({
             <div
               key={project.id}
               draggable
+              role="button"
+              tabIndex={0}
+              onClick={() => onOpenProject(project.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onOpenProject(project.id);
+                }
+              }}
               onDragStart={(event) => {
                 event.dataTransfer.setData('application/project-id', project.id);
                 event.dataTransfer.effectAllowed = 'move';
               }}
-              className="cursor-grab rounded-xl border border-slate-700 bg-slate-900/65 p-3 active:cursor-grabbing"
+              className="cursor-pointer rounded-xl border border-slate-700 bg-slate-900/65 p-3 transition hover:border-slate-500 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 active:cursor-grabbing"
               style={{ borderLeft: `4px solid ${project.color}` }}
             >
               <div className="flex items-start justify-between gap-3">
@@ -346,7 +357,16 @@ function AreaColumn({
                   <p className="truncate text-sm font-semibold text-white">{project.emoji} {project.name}</p>
                   <p className="mt-1 text-xs text-slate-400">{projectTasks.length} aperti{projectOverdue > 0 ? ` · ${projectOverdue} scaduti` : ''}</p>
                 </div>
-                <button onClick={() => onEditProject(project)} className="shrink-0 rounded p-1 text-xs text-slate-500 hover:text-blue-300" title="Modifica progetto">✏️</button>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onEditProject(project);
+                  }}
+                  className="shrink-0 rounded p-1 text-xs text-slate-500 hover:text-blue-300"
+                  title="Modifica progetto"
+                >
+                  ✏️
+                </button>
               </div>
             </div>
           );
@@ -365,11 +385,13 @@ function AreaBoard({
   projects,
   tasks,
   onMoveProject,
+  onOpenProject,
   onEditProject,
 }: {
   projects: Project[];
   tasks: Task[];
   onMoveProject: (projectId: string, areaId: string | null) => void;
+  onOpenProject: (projectId: string) => void;
   onEditProject: (project: Project) => void;
 }) {
   const areas = projects.filter(project => project.is_area);
@@ -382,9 +404,9 @@ function AreaBoard({
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {areas.map(area => (
-          <AreaColumn key={area.id} area={area} projects={projects} tasks={tasks} onMoveProject={onMoveProject} onEditProject={onEditProject} />
+          <AreaColumn key={area.id} area={area} projects={projects} tasks={tasks} onMoveProject={onMoveProject} onOpenProject={onOpenProject} onEditProject={onEditProject} />
         ))}
-        <AreaColumn area={null} projects={projects} tasks={tasks} onMoveProject={onMoveProject} onEditProject={onEditProject} />
+        <AreaColumn area={null} projects={projects} tasks={tasks} onMoveProject={onMoveProject} onOpenProject={onOpenProject} onEditProject={onEditProject} />
       </div>
     </div>
   );
@@ -1914,6 +1936,10 @@ export default function Home() {
             projects={projects}
             tasks={tasks}
             onMoveProject={handleMoveProjectToArea}
+            onOpenProject={(projectId) => {
+              setSelectedProjectId(projectId);
+              setActiveTab('tasks');
+            }}
             onEditProject={setEditingProject}
           />
         )}
