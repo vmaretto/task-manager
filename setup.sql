@@ -7,12 +7,14 @@ CREATE TABLE IF NOT EXISTS projects (
   emoji TEXT DEFAULT '📁',
   description TEXT DEFAULT '',
   parent_project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
-  is_area BOOLEAN NOT NULL DEFAULT false
+  is_area BOOLEAN NOT NULL DEFAULT false,
+  sort_order INTEGER NOT NULL DEFAULT 0
 );
 
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS parent_project_id UUID REFERENCES projects(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS projects_parent_project_id_idx ON projects(parent_project_id);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_area BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
 
 -- Tabella Tasks
 CREATE TABLE IF NOT EXISTS tasks (
@@ -28,6 +30,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   reminder_channel TEXT DEFAULT 'telegram' CHECK (reminder_channel IN ('telegram', 'email')),
   reminder_status TEXT DEFAULT 'pending' CHECK (reminder_status IN ('pending', 'sent', 'skipped')),
   reminded_at TIMESTAMP WITH TIME ZONE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -35,6 +38,7 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS remind_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_channel TEXT DEFAULT 'telegram';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_status TEXT DEFAULT 'pending';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
 
 -- Enable RLS
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;

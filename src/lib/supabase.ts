@@ -16,6 +16,7 @@ export interface Task {
   reminder_channel: 'telegram' | 'email';
   reminder_status: 'pending' | 'sent' | 'skipped';
   reminded_at: string | null;
+  sort_order: number;
   created_at: string;
 }
 
@@ -28,6 +29,7 @@ export interface Project {
   description: string;
   parent_project_id: string | null;
   is_area: boolean;
+  sort_order: number;
 }
 
 type BackendMode = 'remote' | 'local';
@@ -63,6 +65,7 @@ const defaultProjects: Project[] = [
     description: 'Direttore Operativo - Universita della Tuscia',
     parent_project_id: null,
     is_area: false,
+    sort_order: 0,
   },
   {
     id: '22222222-2222-2222-2222-222222222222',
@@ -73,6 +76,7 @@ const defaultProjects: Project[] = [
     description: 'Horizon Europe - Food Hub',
     parent_project_id: null,
     is_area: false,
+    sort_order: 1,
   },
   {
     id: '44444444-4444-4444-4444-444444444444',
@@ -83,6 +87,7 @@ const defaultProjects: Project[] = [
     description: 'Progetto EU LIFE - App riconoscimento cibo',
     parent_project_id: null,
     is_area: false,
+    sort_order: 2,
   },
   {
     id: '55555555-5555-5555-5555-555555555555',
@@ -93,6 +98,7 @@ const defaultProjects: Project[] = [
     description: 'Valorizzazione territoriale Comune di Tolfa',
     parent_project_id: null,
     is_area: false,
+    sort_order: 3,
   },
 ];
 
@@ -219,6 +225,7 @@ function normalizeProject(project: Partial<Project>): Project {
     description: project.description ?? '',
     parent_project_id: project.parent_project_id ?? null,
     is_area: project.is_area ?? false,
+    sort_order: project.sort_order ?? 0,
   };
 }
 
@@ -273,6 +280,7 @@ function normalizeTask(task: Partial<Task>): Task {
     reminder_channel: task.reminder_channel ?? 'telegram',
     reminder_status: task.reminder_status ?? 'pending',
     reminded_at: task.reminded_at ?? null,
+    sort_order: task.sort_order ?? 0,
     created_at: task.created_at ?? nowIso(),
   };
 }

@@ -58,13 +58,15 @@ function TaskItem({
   projects,
   onToggle, 
   onDelete,
-  onEdit
+  onEdit,
+  onReorder,
 }: { 
   task: Task; 
   projects: Project[];
   onToggle: () => void | Promise<void>; 
   onDelete: () => void;
   onEdit: () => void;
+  onReorder?: (draggedTaskId: string, targetTaskId: string) => void;
 }) {
   const [isToggling, setIsToggling] = useState(false);
   const project = projects.find(p => p.id === task.project_id);
@@ -93,6 +95,19 @@ function TaskItem({
     <div
       draggable
       onDragStart={(e) => { e.dataTransfer.setData('application/task-id', task.id); e.dataTransfer.effectAllowed = 'move'; }}
+      onDragOver={(event) => {
+        if (onReorder && event.dataTransfer.types.includes('application/task-id')) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
+      onDrop={(event) => {
+        if (!onReorder) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const draggedTaskId = event.dataTransfer.getData('application/task-id');
+        if (draggedTaskId && draggedTaskId !== task.id) onReorder(draggedTaskId, task.id);
+      }}
       className={`bg-slate-800 rounded-xl p-4 border-2 ${task.completed ? 'opacity-50 border-slate-700' : 'border-slate-600'} shadow-lg cursor-grab active:cursor-grabbing`}>
       <div className="flex items-start gap-3">
         {/* Larger tap target wrapper */}
@@ -159,6 +174,7 @@ function TaskItem({
         </div>
         
         <div className="flex gap-1 flex-shrink-0">
+          {onReorder && <span className="select-none p-2 text-slate-500" title="Trascina per riordinare">⋮⋮</span>}
           <button
             onClick={onEdit}
             className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 p-2 rounded-lg transition-colors"
@@ -278,6 +294,7 @@ function AreaColumn({
   area,
   projects,
   tasks,
+  onlyActive,
   onMoveProject,
   onOpenProject,
   onEditProject,
@@ -285,13 +302,19 @@ function AreaColumn({
   area: Project | null;
   projects: Project[];
   tasks: Task[];
-  onMoveProject: (projectId: string, areaId: string | null) => void;
+  onlyActive: boolean;
+  onMoveProject: (projectId: string, areaId: string | null, beforeProjectId?: string | null) => void;
   onOpenProject: (projectId: string) => void;
   onEditProject: (project: Project) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
-  const children = projects.filter(project => !project.is_area && project.parent_project_id === (area?.id ?? null));
-  const childIds = new Set(children.map(project => project.id));
+  const allChildren = projects
+    .filter(project => !project.is_area && project.parent_project_id === (area?.id ?? null))
+    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+  const children = onlyActive
+    ? allChildren.filter(project => tasks.some(task => task.project_id === project.id && !task.completed))
+    : allChildren;
+  const childIds = new Set(allChildren.map(project => project.id));
   const relevantTasks = tasks.filter(task => task.project_id && (childIds.has(task.project_id) || task.project_id === area?.id));
   const openTasks = relevantTasks.filter(task => !task.completed);
   const today = dateKey();
@@ -311,7 +334,7 @@ function AreaColumn({
         event.preventDefault();
         setDragOver(false);
         const projectId = event.dataTransfer.getData('application/project-id');
-        if (projectId) onMoveProject(projectId, area?.id ?? null);
+        if (projectId) onMoveProject(projectId, area?.id ?? null, null);
       }}
     >
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -320,7 +343,9 @@ function AreaColumn({
             <span className="text-xl">{area?.emoji ?? '🧺'}</span>
             <h3 className="font-bold text-white">{area?.name ?? 'Senza area'}</h3>
           </div>
-          <p className="mt-1 text-xs text-slate-400">{children.length} progetti · {openTasks.length} task aperti</p>
+          <p className="mt-1 text-xs text-slate-400">
+            {onlyActive ? `${children.length} attivi su ${allChildren.length}` : `${children.length} progetti`} · {openTasks.length} task aperti
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {overdue > 0 && <span className="rounded-full bg-rose-500/15 px-2 py-1 text-xs font-semibold text-rose-300">{overdue} scaduti</span>}
@@ -349,6 +374,20 @@ function AreaColumn({
                 event.dataTransfer.setData('application/project-id', project.id);
                 event.dataTransfer.effectAllowed = 'move';
               }}
+              onDragOver={(event) => {
+                if (event.dataTransfer.types.includes('application/project-id')) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const draggedProjectId = event.dataTransfer.getData('application/project-id');
+                if (draggedProjectId && draggedProjectId !== project.id) {
+                  onMoveProject(draggedProjectId, area?.id ?? null, project.id);
+                }
+              }}
               className="cursor-pointer rounded-xl border border-slate-700 bg-slate-900/65 p-3 transition hover:border-slate-500 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 active:cursor-grabbing"
               style={{ borderLeft: `4px solid ${project.color}` }}
             >
@@ -367,13 +406,14 @@ function AreaColumn({
                 >
                   ✏️
                 </button>
+                <span className="shrink-0 select-none py-1 text-xs text-slate-600" title="Trascina per riordinare">⋮⋮</span>
               </div>
             </div>
           );
         })}
         {children.length === 0 && (
           <div className="rounded-xl border border-dashed border-slate-600 p-5 text-center text-sm text-slate-500">
-            Trascina qui un progetto
+            {onlyActive && allChildren.length > 0 ? 'Nessun progetto con task attivi' : 'Trascina qui un progetto'}
           </div>
         )}
       </div>
@@ -390,23 +430,35 @@ function AreaBoard({
 }: {
   projects: Project[];
   tasks: Task[];
-  onMoveProject: (projectId: string, areaId: string | null) => void;
+  onMoveProject: (projectId: string, areaId: string | null, beforeProjectId?: string | null) => void;
   onOpenProject: (projectId: string) => void;
   onEditProject: (project: Project) => void;
 }) {
   const areas = projects.filter(project => project.is_area);
+  const [onlyActive, setOnlyActive] = useState(false);
 
   return (
     <div>
-      <div className="mb-5">
-        <h2 className="text-2xl font-bold text-white">Territori di lavoro</h2>
-        <p className="mt-1 text-sm text-slate-400">Trascina ogni progetto nella sua area. La colonna “Senza area” raccoglie ciò che deve ancora essere classificato.</p>
+      <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Territori di lavoro</h2>
+          <p className="mt-1 text-sm text-slate-400">Trascina i progetti per spostarli o riordinarli. La colonna “Senza area” raccoglie ciò che deve ancora essere classificato.</p>
+        </div>
+        <label className="inline-flex cursor-pointer items-center gap-3 rounded-xl border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-200">
+          <input
+            type="checkbox"
+            checked={onlyActive}
+            onChange={(event) => setOnlyActive(event.target.checked)}
+            className="h-4 w-4 accent-blue-500"
+          />
+          Solo progetti con task attivi
+        </label>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {areas.map(area => (
-          <AreaColumn key={area.id} area={area} projects={projects} tasks={tasks} onMoveProject={onMoveProject} onOpenProject={onOpenProject} onEditProject={onEditProject} />
+          <AreaColumn key={area.id} area={area} projects={projects} tasks={tasks} onlyActive={onlyActive} onMoveProject={onMoveProject} onOpenProject={onOpenProject} onEditProject={onEditProject} />
         ))}
-        <AreaColumn area={null} projects={projects} tasks={tasks} onMoveProject={onMoveProject} onOpenProject={onOpenProject} onEditProject={onEditProject} />
+        <AreaColumn area={null} projects={projects} tasks={tasks} onlyActive={onlyActive} onMoveProject={onMoveProject} onOpenProject={onOpenProject} onEditProject={onEditProject} />
       </div>
     </div>
   );
@@ -438,6 +490,7 @@ function EditTaskModal({
     reminder_channel: 'telegram' as const,
     reminder_status: 'pending' as const,
     reminded_at: null,
+    sort_order: 0,
     created_at: '',
   };
 
@@ -658,6 +711,7 @@ function AddTaskModal({
         reminder_channel: reminderChannel,
         reminder_status: 'pending',
         reminded_at: null,
+        sort_order: 0,
       });
       setText('');
       setNotes('');
@@ -834,7 +888,7 @@ function EditProjectModal({
   onSave: (projectId: string, updates: Partial<Project>) => void;
   onDelete: (projectId: string) => void;
 }) {
-  const initial = project ?? { id: '', name: '', description: '', emoji: '📁', color: '#3b82f6', status: 'backlog' as const, parent_project_id: null, is_area: false };
+  const initial = project ?? { id: '', name: '', description: '', emoji: '📁', color: '#3b82f6', status: 'backlog' as const, parent_project_id: null, is_area: false, sort_order: 0 };
   const [name, setName] = useState(initial.name);
   const [description, setDescription] = useState(initial.description);
   const [emoji, setEmoji] = useState(initial.emoji);
@@ -967,6 +1021,7 @@ function AddProjectModal({
         status: defaultIsArea ? 'active' : 'backlog',
         parent_project_id: defaultIsArea ? null : parentProjectId,
         is_area: defaultIsArea,
+        sort_order: 0,
       });
       setName('');
       setDescription('');
@@ -1101,6 +1156,7 @@ function OverviewDashboard({
   projects,
   onToggleTask,
   onEditTask,
+  onDeleteTask,
   onOpenTasks,
   onOpenProjects,
 }: {
@@ -1108,12 +1164,14 @@ function OverviewDashboard({
   projects: Project[];
   onToggleTask: (taskId: string) => void | Promise<void>;
   onEditTask: (task: Task) => void;
+  onDeleteTask: (taskId: string) => void | Promise<void>;
   onOpenTasks: (timeFilter: TimeFilter, projectId?: string | null) => void;
   onOpenProjects: () => void;
 }) {
   const today = dateKey();
   const weekEnd = addDaysKey(7);
   const openTasks = tasks.filter(task => !task.completed);
+  const dashboardTasks = openTasks.filter(task => task.priority !== 'low');
   const overdueTasks = openTasks.filter(task => task.due_date && task.due_date < today);
   const todayTasks = openTasks.filter(task => task.due_date === today);
   const weekTasks = openTasks.filter(task => task.due_date && task.due_date > today && task.due_date <= weekEnd);
@@ -1121,12 +1179,12 @@ function OverviewDashboard({
   const unassignedTasks = openTasks.filter(task => !task.project_id);
 
   const priorityOrder = { high: 0, medium: 1, low: 2 };
-  const focusTasks = [...openTasks]
+  const focusTasks = [...dashboardTasks]
     .sort((a, b) => {
+      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) return priorityOrder[a.priority] - priorityOrder[b.priority];
       const aUrgency = a.due_date && a.due_date < today ? 0 : a.due_date === today ? 1 : a.due_date ? 2 : 3;
       const bUrgency = b.due_date && b.due_date < today ? 0 : b.due_date === today ? 1 : b.due_date ? 2 : 3;
       if (aUrgency !== bUrgency) return aUrgency - bUrgency;
-      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) return priorityOrder[a.priority] - priorityOrder[b.priority];
       return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31');
     })
     .slice(0, 5);
@@ -1142,6 +1200,7 @@ function OverviewDashboard({
       description: 'Attività non ancora assegnate a un progetto',
       parent_project_id: null,
       is_area: true,
+      sort_order: 0,
       synthetic: true,
     },
   ];
@@ -1151,18 +1210,19 @@ function OverviewDashboard({
       const parent = project.parent_project_id ? projects.find(candidate => candidate.id === project.parent_project_id) : undefined;
       const projectTasks = tasks.filter(task => project.synthetic ? !task.project_id : task.project_id === project.id);
       const open = projectTasks.filter(task => !task.completed);
+      const visibleOpen = open.filter(task => task.priority !== 'low');
       const overdue = open.filter(task => task.due_date && task.due_date < today).length;
       const high = open.filter(task => task.priority === 'high').length;
       const completed = projectTasks.filter(task => task.completed).length;
       const progress = projectTasks.length ? Math.round((completed / projectTasks.length) * 100) : 0;
-      const nextAction = [...open].sort((a, b) => {
+      const nextAction = [...visibleOpen].sort((a, b) => {
+        if (priorityOrder[a.priority] !== priorityOrder[b.priority]) return priorityOrder[a.priority] - priorityOrder[b.priority];
         const aUrgency = a.due_date && a.due_date < today ? 0 : a.due_date === today ? 1 : a.due_date ? 2 : 3;
         const bUrgency = b.due_date && b.due_date < today ? 0 : b.due_date === today ? 1 : b.due_date ? 2 : 3;
         if (aUrgency !== bUrgency) return aUrgency - bUrgency;
-        if (priorityOrder[a.priority] !== priorityOrder[b.priority]) return priorityOrder[a.priority] - priorityOrder[b.priority];
         return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31');
       })[0];
-      const reminder = [...open]
+      const reminder = [...visibleOpen]
         .filter(task => task.remind_at && task.reminder_status === 'pending')
         .sort((a, b) => (a.remind_at ?? '').localeCompare(b.remind_at ?? ''))[0];
       const health = project.status === 'done'
@@ -1183,7 +1243,7 @@ function OverviewDashboard({
       return (b.overdue * 4 + b.high * 2 + b.open) - (a.overdue * 4 + a.high * 2 + a.open);
     });
 
-  const importantReminders = [...openTasks]
+  const importantReminders = [...dashboardTasks]
     .filter(task => task.remind_at && task.reminder_status === 'pending')
     .sort((a, b) => (a.remind_at ?? '').localeCompare(b.remind_at ?? ''))
     .slice(0, 5);
@@ -1250,12 +1310,37 @@ function OverviewDashboard({
               <div className="mt-4 flex-1 rounded-xl border border-slate-700/80 bg-slate-900/70 p-3">
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-300">In corso · prossima azione</p>
                 {nextAction ? (
-                  <button onClick={() => onEditTask(nextAction)} className="mt-1.5 w-full text-left">
-                    <span className="line-clamp-2 block text-sm font-semibold leading-snug text-slate-100 hover:text-white">{nextAction.text}</span>
-                    {nextAction.notes && <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-slate-400">📝 {nextAction.notes}</span>}
-                  </button>
+                  <div className="mt-2 flex items-start gap-2">
+                    <button
+                      onClick={() => onToggleTask(nextAction.id)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-slate-500 text-transparent transition hover:border-emerald-400 hover:bg-emerald-500/10"
+                      aria-label={`Completa ${nextAction.text}`}
+                      title="Completa"
+                    >
+                      ✓
+                    </button>
+                    <button onClick={() => onEditTask(nextAction)} className="min-w-0 flex-1 text-left">
+                      <span className={`mb-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${nextAction.priority === 'high' ? 'bg-rose-500/20 text-rose-200' : 'bg-amber-500/20 text-amber-200'}`}>
+                        {nextAction.priority === 'high' ? 'Alta' : 'Media'}
+                      </span>
+                      <span className="line-clamp-2 block text-sm font-semibold leading-snug text-slate-100 hover:text-white">{nextAction.text}</span>
+                      {nextAction.notes && <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-slate-400">📝 {nextAction.notes}</span>}
+                    </button>
+                    <div className="flex shrink-0 flex-col gap-1">
+                      <button onClick={() => onEditTask(nextAction)} className="rounded-md p-1 text-slate-400 hover:bg-blue-500/15 hover:text-blue-300" title="Modifica">✏️</button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Eliminare il task “${nextAction.text}”?`)) void onDeleteTask(nextAction.id);
+                        }}
+                        className="rounded-md p-1 text-slate-500 hover:bg-rose-500/15 hover:text-rose-300"
+                        title="Elimina"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </div>
                 ) : (
-                  <p className="mt-1.5 text-sm text-slate-500">Nessuna attività aperta</p>
+                  <p className="mt-1.5 text-sm text-slate-500">Nessuna attività alta o media</p>
                 )}
               </div>
 
@@ -1299,9 +1384,11 @@ function OverviewDashboard({
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h2 id="daily-focus" className="text-lg font-bold text-white">Focus operativo</h2>
-              <p className="text-sm text-slate-400">Le prime cose da affrontare, ordinate per urgenza.</p>
+              <p className="text-sm text-slate-400">Prima le priorità alte, poi le medie. Le basse restano fuori dalla dashboard.</p>
             </div>
-            <span className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-200">Top {focusTasks.length}</span>
+            <span className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-200">
+              {dashboardTasks.filter(task => task.priority === 'high').length} alte · {dashboardTasks.filter(task => task.priority === 'medium').length} medie
+            </span>
           </div>
           {focusTasks.length === 0 ? (
             <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-emerald-100">
@@ -1322,7 +1409,12 @@ function OverviewDashboard({
                       ✓
                     </button>
                     <button onClick={() => onEditTask(task)} className="min-w-0 flex-1 text-left">
-                      <span className="block font-medium text-slate-100 group-hover:text-white">{task.text}</span>
+                      <span className="flex items-start gap-2">
+                        <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${task.priority === 'high' ? 'bg-rose-500/20 text-rose-200' : 'bg-amber-500/20 text-amber-200'}`}>
+                          {task.priority === 'high' ? 'Alta' : 'Media'}
+                        </span>
+                        <span className="block font-medium text-slate-100 group-hover:text-white">{task.text}</span>
+                      </span>
                       <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
                         {project && <span style={{ color: project.color }}>{project.emoji} {project.name}</span>}
                         {task.due_date && (
@@ -1331,9 +1423,20 @@ function OverviewDashboard({
                             {new Date(`${task.due_date}T12:00:00`).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}
                           </span>
                         )}
-                        <span>{task.priority === 'high' ? 'Priorità alta' : task.priority === 'medium' ? 'Priorità media' : 'Priorità bassa'}</span>
                       </span>
                     </button>
+                    <div className="flex shrink-0 gap-1">
+                      <button onClick={() => onEditTask(task)} className="rounded-lg p-2 text-slate-400 hover:bg-blue-500/15 hover:text-blue-300" title="Modifica">✏️</button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Eliminare il task “${task.text}”?`)) void onDeleteTask(task.id);
+                        }}
+                        className="rounded-lg p-2 text-slate-500 hover:bg-rose-500/15 hover:text-rose-300"
+                        title="Elimina"
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -1354,22 +1457,40 @@ function OverviewDashboard({
                 const project = projects.find(item => item.id === task.project_id);
                 const isLate = task.remind_at ? new Date(task.remind_at) < new Date() : false;
                 return (
-                <button
-                  key={task.id}
-                  onClick={() => onEditTask(task)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900/45 p-3 text-left transition hover:border-slate-500"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="line-clamp-2 min-w-0 text-sm font-semibold text-white">{task.text}</span>
-                    <span className={`shrink-0 text-xs font-semibold ${isLate ? 'text-rose-300' : 'text-cyan-200'}`}>
-                      {isLate ? 'Scaduto' : 'Programmato'}
-                    </span>
+                  <div key={task.id} className="flex items-start gap-2 rounded-xl border border-slate-700 bg-slate-900/45 p-3 transition hover:border-slate-500">
+                    <button
+                      onClick={() => onToggleTask(task.id)}
+                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-slate-500 text-transparent hover:border-emerald-400 hover:bg-emerald-500/10"
+                      aria-label={`Completa ${task.text}`}
+                      title="Completa"
+                    >
+                      ✓
+                    </button>
+                    <button onClick={() => onEditTask(task)} className="min-w-0 flex-1 text-left">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="line-clamp-2 min-w-0 text-sm font-semibold text-white">{task.text}</span>
+                        <span className={`shrink-0 text-xs font-semibold ${isLate ? 'text-rose-300' : 'text-cyan-200'}`}>
+                          {isLate ? 'Scaduto' : 'Programmato'}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-400">
+                        <span>⏰ {task.remind_at && formatReminderDate(task.remind_at)}</span>
+                        {project && <span style={{ color: project.color }}>{project.emoji} {project.name}</span>}
+                      </div>
+                    </button>
+                    <div className="flex shrink-0 flex-col gap-1">
+                      <button onClick={() => onEditTask(task)} className="rounded-md p-1 text-slate-400 hover:text-blue-300" title="Modifica">✏️</button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Eliminare il task “${task.text}”?`)) void onDeleteTask(task.id);
+                        }}
+                        className="rounded-md p-1 text-slate-500 hover:text-rose-300"
+                        title="Elimina"
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-400">
-                    <span>⏰ {task.remind_at && formatReminderDate(task.remind_at)}</span>
-                    {project && <span style={{ color: project.color }}>{project.emoji} {project.name}</span>}
-                  </div>
-                </button>
               )})}
               {importantReminders.length === 0 && <p className="rounded-xl bg-slate-900/40 p-4 text-sm text-slate-400">Nessun reminder programmato.</p>}
             </div>
@@ -1422,7 +1543,13 @@ export default function Home() {
 
   async function refreshData(showLoader = false) {
     if (showLoader) setLoading(true);
-    const mode = await getBackendMode();
+    let mode = await getBackendMode();
+    const pendingBeforeRefresh = getSyncStatus().pendingCount;
+    if (mode === 'remote' && pendingBeforeRefresh > 0) {
+      setSyncing(true);
+      await syncPendingChanges();
+      mode = await getBackendMode();
+    }
     const [tasksData, projectsData] = await Promise.all([getTasks(), getProjects()]);
     const syncStatus = getSyncStatus();
     setBackendMode(mode);
@@ -1444,25 +1571,17 @@ export default function Home() {
 
   useEffect(() => {
     const interval = window.setInterval(async () => {
+      setSyncing(true);
+      const synced = await syncPendingChanges();
       const mode = await getBackendMode();
+      const syncStatus = getSyncStatus();
       setBackendMode(mode);
+      setPendingSyncCount(syncStatus.pendingCount);
+      setLastSyncError(syncStatus.lastSyncError);
+      setSyncing(syncStatus.syncing);
 
-      if (mode === 'remote') {
-        setSyncing(true);
-        const synced = await syncPendingChanges();
-        const syncStatus = getSyncStatus();
-        setPendingSyncCount(syncStatus.pendingCount);
-        setLastSyncError(syncStatus.lastSyncError);
-        setSyncing(syncStatus.syncing);
-
-        if (synced) {
-          await refreshData(false);
-        }
-      } else {
-        const syncStatus = getSyncStatus();
-        setPendingSyncCount(syncStatus.pendingCount);
-        setLastSyncError(syncStatus.lastSyncError);
-        setSyncing(syncStatus.syncing);
+      if (synced) {
+        await refreshData(false);
       }
     }, 15000);
 
@@ -1478,6 +1597,7 @@ export default function Home() {
 
   // Quick add task
   const handleQuickAdd = async (text: string) => {
+    const siblingTasks = tasks.filter(task => task.project_id === selectedProjectId);
     const newTask = await addTask({
       text,
       notes: '',
@@ -1490,6 +1610,7 @@ export default function Home() {
       reminder_channel: 'telegram',
       reminder_status: 'pending',
       reminded_at: null,
+      sort_order: siblingTasks.length ? Math.max(...siblingTasks.map(task => task.sort_order)) + 1 : 0,
     });
     if (newTask) {
       setTasks(prev => [newTask, ...prev]);
@@ -1499,7 +1620,11 @@ export default function Home() {
 
   // Add task with details
   const handleAddTask = async (taskData: Omit<Task, 'id' | 'created_at'>) => {
-    const newTask = await addTask(taskData);
+    const siblingTasks = tasks.filter(task => task.project_id === taskData.project_id);
+    const newTask = await addTask({
+      ...taskData,
+      sort_order: siblingTasks.length ? Math.max(...siblingTasks.map(task => task.sort_order)) + 1 : 0,
+    });
     if (newTask) {
       setTasks(prev => [newTask, ...prev]);
       refreshSyncStatus();
@@ -1510,10 +1635,14 @@ export default function Home() {
   const handleToggleTask = async (taskId: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (task) {
-      const updated = await updateTask(taskId, { completed: !task.completed });
+      const nextCompleted = !task.completed;
+      setTasks(previous => previous.map(item => item.id === taskId ? { ...item, completed: nextCompleted } : item));
+      const updated = await updateTask(taskId, { completed: nextCompleted });
       if (updated) {
         setTasks(prev => prev.map(t => t.id === taskId ? updated : t));
         refreshSyncStatus();
+      } else {
+        setTasks(previous => previous.map(item => item.id === taskId ? task : item));
       }
     }
   };
@@ -1529,7 +1658,13 @@ export default function Home() {
 
   // Update task
   const handleUpdateTask = async (taskId: string, updates: Partial<Task>) => {
-    const updated = await updateTask(taskId, updates);
+    const currentTask = tasks.find(task => task.id === taskId);
+    const projectChanged = currentTask && updates.project_id !== undefined && updates.project_id !== currentTask.project_id;
+    const destinationTasks = projectChanged ? tasks.filter(task => task.project_id === updates.project_id && task.id !== taskId) : [];
+    const normalizedUpdates = projectChanged
+      ? { ...updates, sort_order: destinationTasks.length ? Math.max(...destinationTasks.map(task => task.sort_order)) + 1 : 0 }
+      : updates;
+    const updated = await updateTask(taskId, normalizedUpdates);
     if (updated) {
       setTasks(prev => prev.map(t => t.id === taskId ? updated : t));
       refreshSyncStatus();
@@ -1538,7 +1673,11 @@ export default function Home() {
 
   // Add project
   const handleAddProject = async (projectData: Omit<Project, 'id'>) => {
-    const newProject = await addProject(projectData);
+    const siblings = projects.filter(project => project.parent_project_id === projectData.parent_project_id && project.is_area === projectData.is_area);
+    const newProject = await addProject({
+      ...projectData,
+      sort_order: siblings.length ? Math.max(...siblings.map(project => project.sort_order)) + 1 : 0,
+    });
     if (newProject) {
       setProjects(prev => [...prev, newProject]);
       refreshSyncStatus();
@@ -1547,7 +1686,15 @@ export default function Home() {
 
   // Update project
   const handleUpdateProject = async (projectId: string, updates: Partial<Project>) => {
-    const updated = await updateProject(projectId, updates);
+    const currentProject = projects.find(project => project.id === projectId);
+    const areaChanged = currentProject && updates.parent_project_id !== undefined && updates.parent_project_id !== currentProject.parent_project_id;
+    const destinationProjects = areaChanged
+      ? projects.filter(project => !project.is_area && project.parent_project_id === updates.parent_project_id && project.id !== projectId)
+      : [];
+    const normalizedUpdates = areaChanged
+      ? { ...updates, sort_order: destinationProjects.length ? Math.max(...destinationProjects.map(project => project.sort_order)) + 1 : 0 }
+      : updates;
+    const updated = await updateProject(projectId, normalizedUpdates);
     if (updated) {
       setProjects(prev => prev.map(p => p.id === projectId ? updated : p));
       refreshSyncStatus();
@@ -1573,12 +1720,58 @@ export default function Home() {
     }
   };
 
-  const handleMoveProjectToArea = async (projectId: string, areaId: string | null) => {
-    const updated = await updateProject(projectId, { parent_project_id: areaId });
-    if (updated) {
-      setProjects(prev => prev.map(project => project.id === projectId ? updated : project));
-      refreshSyncStatus();
-    }
+  const handleMoveProjectToArea = async (projectId: string, areaId: string | null, beforeProjectId: string | null = null) => {
+    const movedProject = projects.find(project => project.id === projectId);
+    if (!movedProject || movedProject.is_area) return;
+
+    const siblings = projects
+      .filter(project => !project.is_area && project.parent_project_id === areaId && project.id !== projectId)
+      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    const targetIndex = beforeProjectId ? siblings.findIndex(project => project.id === beforeProjectId) : siblings.length;
+    const insertAt = targetIndex >= 0 ? targetIndex : siblings.length;
+    const ordered = [...siblings];
+    ordered.splice(insertAt, 0, { ...movedProject, parent_project_id: areaId });
+
+    const positions = new Map(ordered.map((project, index) => [project.id, index]));
+    setProjects(previous => previous.map(project => {
+      const position = positions.get(project.id);
+      return position === undefined ? project : { ...project, parent_project_id: areaId, sort_order: position };
+    }));
+
+    const updatedProjects = await Promise.all(
+      ordered.map((project, index) => updateProject(project.id, { parent_project_id: areaId, sort_order: index })),
+    );
+    const persisted = new Map(updatedProjects.filter((project): project is Project => Boolean(project)).map(project => [project.id, project]));
+    setProjects(previous => previous.map(project => persisted.get(project.id) ?? project));
+    refreshSyncStatus();
+  };
+
+  const handleReorderTask = async (taskId: string, beforeTaskId: string) => {
+    if (!selectedProjectId || taskId === beforeTaskId) return;
+
+    const ordered = tasks
+      .filter(task => task.project_id === selectedProjectId)
+      .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at));
+    const movedTask = ordered.find(task => task.id === taskId);
+    if (!movedTask) return;
+
+    const withoutMoved = ordered.filter(task => task.id !== taskId);
+    const targetIndex = withoutMoved.findIndex(task => task.id === beforeTaskId);
+    if (targetIndex < 0) return;
+    withoutMoved.splice(targetIndex, 0, movedTask);
+
+    const positions = new Map(withoutMoved.map((task, index) => [task.id, index]));
+    setTasks(previous => previous.map(task => {
+      const position = positions.get(task.id);
+      return position === undefined ? task : { ...task, sort_order: position };
+    }));
+
+    const updatedTasks = await Promise.all(
+      withoutMoved.map((task, index) => updateTask(task.id, { sort_order: index })),
+    );
+    const persisted = new Map(updatedTasks.filter((task): task is Task => Boolean(task)).map(task => [task.id, task]));
+    setTasks(previous => previous.map(task => persisted.get(task.id) ?? task));
+    refreshSyncStatus();
   };
 
   const handleOpenProject = (projectId: string, returnTab: 'overview' | 'areas' | 'projects' = 'areas') => {
@@ -1611,6 +1804,7 @@ export default function Home() {
   // Sort tasks: overdue and upcoming dates first, then priority.
   const sortedTasks = [...filteredTasks].sort((a, b) => {
     const priorityOrder = { high: 0, medium: 1, low: 2 };
+    if (selectedProjectId && a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
     if (a.due_date && b.due_date && a.due_date !== b.due_date) return a.due_date.localeCompare(b.due_date);
     if (a.due_date && !b.due_date) return -1;
     if (!a.due_date && b.due_date) return 1;
@@ -1625,6 +1819,7 @@ export default function Home() {
   const selectedProjectTasks = selectedProjectId ? tasks.filter(task => task.project_id === selectedProjectId) : [];
   const selectedProjectOpenTasks = selectedProjectTasks.filter(task => !task.completed).length;
   const selectedProjectCompletedTasks = selectedProjectTasks.length - selectedProjectOpenTasks;
+  const canManuallyReorderTasks = Boolean(selectedProjectId && filter === 'all' && categoryFilter === 'all' && timeFilter === 'all');
 
   if (loading) {
     return (
@@ -1762,6 +1957,7 @@ export default function Home() {
             projects={projects}
             onToggleTask={handleToggleTask}
             onEditTask={setEditingTask}
+            onDeleteTask={handleDeleteTask}
             onOpenTasks={(nextTimeFilter, projectId) => {
               setTaskReturnTab('overview');
               setFilter('active');
@@ -1812,6 +2008,7 @@ export default function Home() {
                     <span className="rounded-full bg-emerald-500/15 px-3 py-1.5 font-semibold text-emerald-200">{selectedProjectCompletedTasks} completati</span>
                   </div>
                 </div>
+                <p className="mt-3 text-xs text-slate-400">⋮⋮ Trascina i task per cambiarne l’ordine. L’ordinamento è disponibile quando non ci sono filtri attivi.</p>
               </section>
             )}
 
@@ -1940,6 +2137,7 @@ export default function Home() {
                     onToggle={() => handleToggleTask(task.id)}
                     onDelete={() => handleDeleteTask(task.id)}
                     onEdit={() => setEditingTask(task)}
+                    onReorder={canManuallyReorderTasks ? handleReorderTask : undefined}
                   />
                 ))}
               </div>
