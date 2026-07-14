@@ -384,48 +384,64 @@ export async function syncPendingChanges(): Promise<boolean> {
     }
 
     try {
-      const tasks = readTasksLocal();
-      const projects = readProjectsLocal();
+      const taskUpsertIds = new Set<string>();
+      const taskDeleteIds = new Set<string>();
+      const projectUpsertIds = new Set<string>();
+      const projectDeleteIds = new Set<string>();
 
       for (const operation of queue) {
+        const upserts = operation.entity === 'task' ? taskUpsertIds : projectUpsertIds;
+        const deletes = operation.entity === 'task' ? taskDeleteIds : projectDeleteIds;
         if (operation.type === 'reorder') {
-          if (operation.entity === 'task') {
-            const reorderedTasks = tasks.filter((task) => operation.ids.includes(task.id));
-            if (reorderedTasks.length > 0) {
-              const { error } = await supabase.from('tasks').upsert(reorderedTasks, { onConflict: 'id' });
-              if (error) throw error;
-            }
-          } else {
-            const reorderedProjects = projects.filter((project) => operation.ids.includes(project.id));
-            if (reorderedProjects.length > 0) {
-              const { error } = await supabase.from('projects').upsert(reorderedProjects, { onConflict: 'id' });
-              if (error) throw error;
-            }
-          }
-          continue;
-        }
-
-        if (operation.entity === 'task') {
-          if (operation.type === 'delete') {
-            const { error } = await supabase.from('tasks').delete().eq('id', operation.id);
-            if (error) throw error;
-          } else {
-            const task = tasks.find((item) => item.id === operation.id);
-            if (!task) continue;
-            const { error } = await supabase.from('tasks').upsert(task, { onConflict: 'id' });
-            if (error) throw error;
-          }
+          operation.ids.forEach((id) => {
+            if (!deletes.has(id)) upserts.add(id);
+          });
+        } else if (operation.type === 'delete') {
+          upserts.delete(operation.id);
+          deletes.add(operation.id);
         } else {
-          if (operation.type === 'delete') {
-            const { error } = await supabase.from('projects').delete().eq('id', operation.id);
-            if (error) throw error;
-          } else {
-            const project = projects.find((item) => item.id === operation.id);
-            if (!project) continue;
-            const { error } = await supabase.from('projects').upsert(project, { onConflict: 'id' });
-            if (error) throw error;
-          }
+          deletes.delete(operation.id);
+          upserts.add(operation.id);
         }
+      }
+
+      let tasks = readTasksLocal();
+      let projects = readProjectsLocal();
+
+      // Repair queues created by older versions: detach every reference before
+      // deleting a project, regardless of the database constraint configuration.
+      if (projectDeleteIds.size > 0) {
+        tasks = tasks.map((task) => projectDeleteIds.has(task.project_id ?? '') ? { ...task, project_id: null } : task);
+        projects = projects.map((project) => projectDeleteIds.has(project.parent_project_id ?? '') ? { ...project, parent_project_id: null } : project);
+        writeTasksLocal(tasks);
+        writeProjectsLocal(projects);
+      }
+
+      const projectsToUpsert = projects.filter((project) => projectUpsertIds.has(project.id) && !projectDeleteIds.has(project.id));
+      if (projectsToUpsert.length > 0) {
+        const { error } = await supabase.from('projects').upsert(projectsToUpsert, { onConflict: 'id' });
+        if (error) throw error;
+      }
+
+      const tasksToUpsert = tasks.filter((task) => taskUpsertIds.has(task.id) && !taskDeleteIds.has(task.id));
+      if (tasksToUpsert.length > 0) {
+        const { error } = await supabase.from('tasks').upsert(tasksToUpsert, { onConflict: 'id' });
+        if (error) throw error;
+      }
+
+      if (taskDeleteIds.size > 0) {
+        const { error } = await supabase.from('tasks').delete().in('id', [...taskDeleteIds]);
+        if (error) throw error;
+      }
+
+      if (projectDeleteIds.size > 0) {
+        const deletedIds = [...projectDeleteIds];
+        const { error: taskReferenceError } = await supabase.from('tasks').update({ project_id: null }).in('project_id', deletedIds);
+        if (taskReferenceError) throw taskReferenceError;
+        const { error: projectReferenceError } = await supabase.from('projects').update({ parent_project_id: null }).in('parent_project_id', deletedIds);
+        if (projectReferenceError) throw projectReferenceError;
+        const { error: projectDeleteError } = await supabase.from('projects').delete().in('id', deletedIds);
+        if (projectDeleteError) throw projectDeleteError;
       }
 
       const [remoteTasks, remoteProjects] = await Promise.all([
@@ -627,15 +643,29 @@ export async function deleteProject(id: string): Promise<boolean> {
   const mode = await detectBackendMode();
 
   if (mode === 'local') {
-    writeProjectsLocal(readProjectsLocal().filter((p) => p.id !== id));
+    writeTasksLocal(readTasksLocal().map((task) => task.project_id === id ? { ...task, project_id: null } : task));
+    writeProjectsLocal(
+      readProjectsLocal()
+        .map((project) => project.parent_project_id === id ? { ...project, parent_project_id: null } : project)
+        .filter((project) => project.id !== id),
+    );
     queueOperation({ entity: 'project', type: 'delete', id });
     return true;
   }
 
   try {
-    const { error } = await supabase!.from('projects').delete().eq('id', id);
-    if (error) throw error;
-    writeProjectsLocal(readProjectsLocal().filter((p) => p.id !== id));
+    const { error: taskReferenceError } = await supabase!.from('tasks').update({ project_id: null }).eq('project_id', id);
+    if (taskReferenceError) throw taskReferenceError;
+    const { error: projectReferenceError } = await supabase!.from('projects').update({ parent_project_id: null }).eq('parent_project_id', id);
+    if (projectReferenceError) throw projectReferenceError;
+    const { error: projectDeleteError } = await supabase!.from('projects').delete().eq('id', id);
+    if (projectDeleteError) throw projectDeleteError;
+    writeTasksLocal(readTasksLocal().map((task) => task.project_id === id ? { ...task, project_id: null } : task));
+    writeProjectsLocal(
+      readProjectsLocal()
+        .map((project) => project.parent_project_id === id ? { ...project, parent_project_id: null } : project)
+        .filter((project) => project.id !== id),
+    );
     return true;
   } catch (error) {
     console.error('Error deleting project, falling back to local mode:', error);

@@ -1706,6 +1706,7 @@ export default function Home() {
     const success = await deleteProject(projectId);
     if (success) {
       setProjects(prev => prev.filter(p => p.id !== projectId));
+      setTasks(prev => prev.map(task => task.project_id === projectId ? { ...task, project_id: null } : task));
       if (selectedProjectId === projectId) setSelectedProjectId(null);
       refreshSyncStatus();
     }
@@ -1868,9 +1869,9 @@ export default function Home() {
 
           {backendMode === 'local' && (
             <div className="mt-4 rounded-xl border-2 border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-              <div className="font-semibold">Stai lavorando in locale.</div>
+              <div className="font-semibold">Sincronizzazione temporaneamente sospesa.</div>
               <div>
-                Supabase non risponde. Le modifiche restano in coda su questo dispositivo e verranno sincronizzate appena torna disponibile.
+                Le modifiche restano al sicuro su questo dispositivo e verranno sincronizzate automaticamente appena possibile.
               </div>
               {pendingSyncCount > 0 && (
                 <div className="mt-1">
