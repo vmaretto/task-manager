@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import CanvasView from './CanvasView';
-import { Task, Project, getTasks, getProjects, addTask, updateTask, deleteTask, addProject, updateProject, deleteProject, getBackendMode, getSyncStatus, syncPendingChanges } from '../lib/supabase';
+import { Task, Project, getTasks, getProjects, addTask, updateTask, updateTaskOrder, deleteTask, addProject, updateProject, updateProjectOrder, deleteProject, getBackendMode, getSyncStatus, syncPendingChanges } from '../lib/supabase';
 
 // ============================================
 // COMPONENTS
@@ -1738,10 +1738,10 @@ export default function Home() {
       return position === undefined ? project : { ...project, parent_project_id: areaId, sort_order: position };
     }));
 
-    const updatedProjects = await Promise.all(
-      ordered.map((project, index) => updateProject(project.id, { parent_project_id: areaId, sort_order: index })),
+    const updatedProjects = await updateProjectOrder(
+      ordered.map((project, index) => ({ id: project.id, parent_project_id: areaId, sort_order: index })),
     );
-    const persisted = new Map(updatedProjects.filter((project): project is Project => Boolean(project)).map(project => [project.id, project]));
+    const persisted = new Map(updatedProjects.map(project => [project.id, project]));
     setProjects(previous => previous.map(project => persisted.get(project.id) ?? project));
     refreshSyncStatus();
   };
@@ -1766,10 +1766,10 @@ export default function Home() {
       return position === undefined ? task : { ...task, sort_order: position };
     }));
 
-    const updatedTasks = await Promise.all(
-      withoutMoved.map((task, index) => updateTask(task.id, { sort_order: index })),
+    const updatedTasks = await updateTaskOrder(
+      withoutMoved.map((task, index) => ({ id: task.id, sort_order: index })),
     );
-    const persisted = new Map(updatedTasks.filter((task): task is Task => Boolean(task)).map(task => [task.id, task]));
+    const persisted = new Map(updatedTasks.map(task => [task.id, task]));
     setTasks(previous => previous.map(task => persisted.get(task.id) ?? task));
     refreshSyncStatus();
   };

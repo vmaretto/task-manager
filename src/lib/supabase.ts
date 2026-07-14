@@ -34,13 +34,19 @@ export interface Project {
 
 type BackendMode = 'remote' | 'local';
 type EntityType = 'task' | 'project';
-type SyncOperationType = 'upsert' | 'delete';
-
-interface SyncOperation {
+type EntitySyncOperation = {
   entity: EntityType;
-  type: SyncOperationType;
+  type: 'upsert' | 'delete';
   id: string;
-}
+};
+
+type ReorderSyncOperation = {
+  entity: EntityType;
+  type: 'reorder';
+  ids: string[];
+};
+
+type SyncOperation = EntitySyncOperation | ReorderSyncOperation;
 
 export interface SyncStatus {
   mode: BackendMode;
@@ -263,7 +269,31 @@ function setRemoteMode() {
 
 function queueOperation(operation: SyncOperation) {
   const queue = readQueue();
-  writeQueue([...queue, operation]);
+  if (operation.type === 'reorder') {
+    const mergedIds = new Set(operation.ids);
+    const withoutPreviousReorders = queue.filter((queued) => {
+      if (queued.type !== 'reorder' || queued.entity !== operation.entity) return true;
+      queued.ids.forEach((id) => mergedIds.add(id));
+      return false;
+    });
+    writeQueue([...withoutPreviousReorders, { ...operation, ids: [...mergedIds] }]);
+    return;
+  }
+
+  const compacted = queue
+    .filter((queued) => queued.type === 'reorder' || queued.entity !== operation.entity || queued.id !== operation.id)
+    .map((queued) => {
+      if (operation.type !== 'delete' || queued.type !== 'reorder' || queued.entity !== operation.entity) return queued;
+      return { ...queued, ids: queued.ids.filter((id) => id !== operation.id) };
+    })
+    .filter((queued) => queued.type !== 'reorder' || queued.ids.length > 0);
+  writeQueue([...compacted, operation]);
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') return error.message;
+  return 'Sync fallita';
 }
 
 function normalizeTask(task: Partial<Task>): Task {
@@ -358,6 +388,23 @@ export async function syncPendingChanges(): Promise<boolean> {
       const projects = readProjectsLocal();
 
       for (const operation of queue) {
+        if (operation.type === 'reorder') {
+          if (operation.entity === 'task') {
+            const reorderedTasks = tasks.filter((task) => operation.ids.includes(task.id));
+            if (reorderedTasks.length > 0) {
+              const { error } = await supabase.from('tasks').upsert(reorderedTasks, { onConflict: 'id' });
+              if (error) throw error;
+            }
+          } else {
+            const reorderedProjects = projects.filter((project) => operation.ids.includes(project.id));
+            if (reorderedProjects.length > 0) {
+              const { error } = await supabase.from('projects').upsert(reorderedProjects, { onConflict: 'id' });
+              if (error) throw error;
+            }
+          }
+          continue;
+        }
+
         if (operation.entity === 'task') {
           if (operation.type === 'delete') {
             const { error } = await supabase.from('tasks').delete().eq('id', operation.id);
@@ -396,7 +443,7 @@ export async function syncPendingChanges(): Promise<boolean> {
       console.error('Error syncing pending changes:', error);
       setLocalMode();
       setSyncMeta({
-        lastSyncError: error instanceof Error ? error.message : 'Sync fallita',
+        lastSyncError: errorMessage(error),
       });
       return false;
     } finally {
@@ -499,6 +546,35 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<Ta
   }
 }
 
+export async function updateTaskOrder(updates: Array<Pick<Task, 'id' | 'sort_order'>>): Promise<Task[]> {
+  if (updates.length === 0) return [];
+
+  const positions = new Map(updates.map((update) => [update.id, update.sort_order]));
+  const reorderedTasks = readTasksLocal().map((task) => {
+    const sortOrder = positions.get(task.id);
+    return sortOrder === undefined ? task : normalizeTask({ ...task, sort_order: sortOrder });
+  });
+  const changedTasks = reorderedTasks.filter((task) => positions.has(task.id));
+  writeTasksLocal(reorderedTasks);
+
+  const mode = await detectBackendMode();
+  if (mode === 'local') {
+    queueOperation({ entity: 'task', type: 'reorder', ids: changedTasks.map((task) => task.id) });
+    return changedTasks;
+  }
+
+  try {
+    const { error } = await supabase!.from('tasks').upsert(changedTasks, { onConflict: 'id' });
+    if (error) throw error;
+    return changedTasks;
+  } catch (error) {
+    console.error('Error reordering tasks, falling back to local mode:', error);
+    setLocalMode();
+    queueOperation({ entity: 'task', type: 'reorder', ids: changedTasks.map((task) => task.id) });
+    return changedTasks;
+  }
+}
+
 export async function deleteTask(id: string): Promise<boolean> {
   const mode = await detectBackendMode();
 
@@ -596,5 +672,36 @@ export async function updateProject(id: string, updates: Partial<Project>): Prom
     console.error('Error updating project, falling back to local mode:', error);
     setLocalMode();
     return updateProject(id, updates);
+  }
+}
+
+export async function updateProjectOrder(
+  updates: Array<Pick<Project, 'id' | 'parent_project_id' | 'sort_order'>>,
+): Promise<Project[]> {
+  if (updates.length === 0) return [];
+
+  const positions = new Map(updates.map((update) => [update.id, update]));
+  const reorderedProjects = readProjectsLocal().map((project) => {
+    const update = positions.get(project.id);
+    return update ? normalizeProject({ ...project, ...update }) : project;
+  });
+  const changedProjects = reorderedProjects.filter((project) => positions.has(project.id));
+  writeProjectsLocal(reorderedProjects);
+
+  const mode = await detectBackendMode();
+  if (mode === 'local') {
+    queueOperation({ entity: 'project', type: 'reorder', ids: changedProjects.map((project) => project.id) });
+    return changedProjects;
+  }
+
+  try {
+    const { error } = await supabase!.from('projects').upsert(changedProjects, { onConflict: 'id' });
+    if (error) throw error;
+    return changedProjects;
+  } catch (error) {
+    console.error('Error reordering projects, falling back to local mode:', error);
+    setLocalMode();
+    queueOperation({ entity: 'project', type: 'reorder', ids: changedProjects.map((project) => project.id) });
+    return changedProjects;
   }
 }
