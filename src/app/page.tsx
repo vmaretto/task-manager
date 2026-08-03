@@ -1667,6 +1667,51 @@ export default function Home() {
     setLastSyncError(syncStatus.lastSyncError);
   };
 
+  const retrySync = async () => {
+    setSyncing(true);
+    const synced = await syncPendingChanges();
+    const syncStatus = getSyncStatus();
+    setBackendMode(syncStatus.mode);
+    setPendingSyncCount(syncStatus.pendingCount);
+    setSyncing(syncStatus.syncing);
+    setLastSyncError(syncStatus.lastSyncError);
+
+    if (synced) {
+      await refreshData(false);
+    }
+  };
+
+  useEffect(() => {
+    const retryWhenActive = () => {
+      if (document.visibilityState !== 'visible') return;
+
+      setSyncing(true);
+      void syncPendingChanges().then(async (synced) => {
+        const syncStatus = getSyncStatus();
+        setBackendMode(syncStatus.mode);
+        setPendingSyncCount(syncStatus.pendingCount);
+        setSyncing(syncStatus.syncing);
+        setLastSyncError(syncStatus.lastSyncError);
+
+        if (synced) {
+          const [tasksData, projectsData] = await Promise.all([getTasks(), getProjects()]);
+          setTasks(tasksData);
+          setProjects(projectsData);
+        }
+      });
+    };
+
+    window.addEventListener('focus', retryWhenActive);
+    window.addEventListener('online', retryWhenActive);
+    document.addEventListener('visibilitychange', retryWhenActive);
+
+    return () => {
+      window.removeEventListener('focus', retryWhenActive);
+      window.removeEventListener('online', retryWhenActive);
+      document.removeEventListener('visibilitychange', retryWhenActive);
+    };
+  }, []);
+
   // Quick add task
   const handleQuickAdd = async (text: string) => {
     const siblingTasks = tasks.filter(task => task.project_id === selectedProjectId);
@@ -1943,21 +1988,31 @@ export default function Home() {
           </div>
 
           {backendMode === 'local' && (
-            <div className="mt-4 rounded-xl border-2 border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-              <div className="font-semibold">Sincronizzazione temporaneamente sospesa.</div>
+            <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border-2 border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
               <div>
-                Le modifiche restano al sicuro su questo dispositivo e verranno sincronizzate automaticamente appena possibile.
+                <div className="font-semibold">Sincronizzazione temporaneamente sospesa.</div>
+                <div>
+                  Le modifiche restano al sicuro su questo dispositivo e verranno sincronizzate automaticamente appena possibile.
+                </div>
+                {pendingSyncCount > 0 && (
+                  <div className="mt-1">
+                    Modifiche in attesa di sync: {pendingSyncCount}
+                  </div>
+                )}
+                {lastSyncError && (
+                  <div className="mt-1 text-amber-300/90">
+                    Ultimo errore sync: {lastSyncError}
+                  </div>
+                )}
               </div>
-              {pendingSyncCount > 0 && (
-                <div className="mt-1">
-                  Modifiche in attesa di sync: {pendingSyncCount}
-                </div>
-              )}
-              {lastSyncError && (
-                <div className="mt-1 text-amber-300/90">
-                  Ultimo errore sync: {lastSyncError}
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={() => void retrySync()}
+                disabled={syncing}
+                className="shrink-0 rounded-lg border border-amber-300/40 bg-amber-400/15 px-3 py-2 font-semibold text-amber-100 hover:bg-amber-400/25 disabled:cursor-wait disabled:opacity-60"
+              >
+                {syncing ? 'Sincronizzazione…' : 'Sincronizza ora'}
+              </button>
             </div>
           )}
 

@@ -373,6 +373,11 @@ export async function syncPendingChanges(): Promise<boolean> {
     const mode = await detectBackendMode(true);
     if (mode !== 'remote' || !supabase) {
       setLocalMode();
+      setSyncMeta({
+        lastSyncError: supabase
+          ? 'Supabase non raggiungibile. Riprova tra poco.'
+          : 'Configurazione Supabase mancante.',
+      });
       return false;
     }
 
