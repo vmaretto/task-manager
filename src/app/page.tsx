@@ -21,6 +21,13 @@ function formatReminderDate(value: string) {
   });
 }
 
+function formatReminderForInput(value: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 16);
+}
+
 const assigneeNotePattern = /^\[\[responsabile:(.*?)\]\](?:\r?\n|$)/i;
 
 function getTaskAssignee(task: Pick<Task, 'text' | 'notes'>) {
@@ -540,7 +547,7 @@ function EditTaskModal({
   const [category, setCategory] = useState<'work' | 'admin' | 'personal' | 'travel'>(initialTask.category);
   const [projectId, setProjectId] = useState<string | null>(initialTask.project_id);
   const [dueDate, setDueDate] = useState(initialTask.due_date || '');
-  const [remindAt, setRemindAt] = useState(initialTask.remind_at ? initialTask.remind_at.slice(0, 16) : '');
+  const [remindAt, setRemindAt] = useState(formatReminderForInput(initialTask.remind_at));
   const [reminderChannel, setReminderChannel] = useState<'telegram' | 'email'>(initialTask.reminder_channel ?? 'telegram');
   const [reminderStatus, setReminderStatus] = useState<'pending' | 'sent' | 'skipped'>(initialTask.reminder_status ?? 'pending');
 
