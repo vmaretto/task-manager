@@ -21,6 +21,35 @@ function formatReminderDate(value: string) {
   });
 }
 
+const assigneeNotePattern = /^\[\[responsabile:(.*?)\]\](?:\r?\n|$)/i;
+
+function getTaskAssignee(task: Pick<Task, 'text' | 'notes'>) {
+  const storedAssignee = task.notes.match(assigneeNotePattern)?.[1]?.trim();
+  if (storedAssignee) return storedAssignee;
+
+  // Compatibilita con i task gia creati usando il prefisso "[Nome]".
+  return task.text.match(/^\[([^\]]+)\]\s+/)?.[1]?.trim() ?? '';
+}
+
+function getVisibleTaskNotes(notes: string) {
+  return notes.replace(assigneeNotePattern, '').trim();
+}
+
+function storeAssigneeInNotes(notes: string, assignee: string) {
+  const visibleNotes = getVisibleTaskNotes(notes);
+  const cleanAssignee = assignee.trim();
+  if (!cleanAssignee) return visibleNotes;
+  return `[[responsabile:${cleanAssignee}]]${visibleNotes ? `\n${visibleNotes}` : ''}`;
+}
+
+function removeMatchingAssigneePrefix(text: string, assignee: string) {
+  const cleanText = text.trim();
+  const prefix = `[${assignee.trim()}]`;
+  return assignee.trim() && cleanText.startsWith(prefix)
+    ? cleanText.slice(prefix.length).trim()
+    : cleanText;
+}
+
 function QuickCapture({ onAdd }: { onAdd: (text: string) => void }) {
   const [text, setText] = useState('');
 
@@ -70,6 +99,8 @@ function TaskItem({
 }) {
   const [isToggling, setIsToggling] = useState(false);
   const project = projects.find(p => p.id === task.project_id);
+  const assignee = getTaskAssignee(task);
+  const visibleNotes = getVisibleTaskNotes(task.notes);
   
   const priorityColors = {
     high: 'bg-red-500/30 text-red-300 border-red-500/50',
@@ -137,9 +168,9 @@ function TaskItem({
             {task.text}
           </div>
           
-          {task.notes && (
+          {visibleNotes && (
             <div className="text-sm text-slate-400 mt-1 italic">
-              📝 {task.notes}
+              📝 {visibleNotes}
             </div>
           )}
           
@@ -149,6 +180,12 @@ function TaskItem({
             <span className={`text-xs px-2 py-1 rounded-md border font-medium ${priorityColors[task.priority]}`}>
               {task.priority === 'high' ? '🔴 Alta' : task.priority === 'medium' ? '🟡 Media' : '⚪ Bassa'}
             </span>
+
+            {assignee && (
+              <span className="text-xs px-2 py-1 rounded-md border border-violet-500/40 bg-violet-500/15 font-medium text-violet-200">
+                👤 {assignee}
+              </span>
+            )}
             
             {project && (
               <span 
@@ -494,8 +531,11 @@ function EditTaskModal({
     created_at: '',
   };
 
+  const initialAssignee = getTaskAssignee(initialTask);
+
   const [text, setText] = useState(initialTask.text);
-  const [notes, setNotes] = useState(initialTask.notes || '');
+  const [notes, setNotes] = useState(getVisibleTaskNotes(initialTask.notes || ''));
+  const [assignee, setAssignee] = useState(initialAssignee);
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>(initialTask.priority);
   const [category, setCategory] = useState<'work' | 'admin' | 'personal' | 'travel'>(initialTask.category);
   const [projectId, setProjectId] = useState<string | null>(initialTask.project_id);
@@ -510,8 +550,8 @@ function EditTaskModal({
     e.preventDefault();
     if (text.trim()) {
       onSave(task.id, {
-        text: text.trim(),
-        notes: notes.trim(),
+        text: removeMatchingAssigneePrefix(text, assignee),
+        notes: storeAssigneeInNotes(notes, assignee),
         priority,
         category,
         project_id: projectId,
@@ -596,6 +636,17 @@ function EditTaskModal({
                 <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Responsabile</label>
+            <input
+              type="text"
+              value={assignee}
+              onChange={(e) => setAssignee(e.target.value)}
+              placeholder="Es. Marco, Ida oppure Virgilio + Simone"
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-violet-500"
+            />
           </div>
           
           <div>
@@ -686,6 +737,7 @@ function AddTaskModal({
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [category, setCategory] = useState<'work' | 'admin' | 'personal' | 'travel'>('work');
   const [projectId, setProjectId] = useState<string | null>(defaultProjectId);
+  const [assignee, setAssignee] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [remindAt, setRemindAt] = useState('');
   const [reminderChannel, setReminderChannel] = useState<'telegram' | 'email'>('telegram');
@@ -701,7 +753,7 @@ function AddTaskModal({
     if (text.trim()) {
       onAdd({
         text: text.trim(),
-        notes: notes.trim(),
+        notes: storeAssigneeInNotes(notes, assignee),
         priority,
         category,
         project_id: projectId,
@@ -718,6 +770,7 @@ function AddTaskModal({
       setPriority('medium');
       setCategory('work');
       setProjectId(null);
+      setAssignee('');
       setDueDate('');
       setRemindAt('');
       setReminderChannel('telegram');
@@ -798,6 +851,17 @@ function AddTaskModal({
                 <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Responsabile</label>
+            <input
+              type="text"
+              value={assignee}
+              onChange={(e) => setAssignee(e.target.value)}
+              placeholder="Es. Marco, Ida oppure Virgilio + Simone"
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-violet-500"
+            />
           </div>
           
           <div>
@@ -1324,7 +1388,7 @@ function OverviewDashboard({
                         {nextAction.priority === 'high' ? 'Alta' : 'Media'}
                       </span>
                       <span className="line-clamp-2 block text-sm font-semibold leading-snug text-slate-100 hover:text-white">{nextAction.text}</span>
-                      {nextAction.notes && <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-slate-400">📝 {nextAction.notes}</span>}
+                      {getVisibleTaskNotes(nextAction.notes) && <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-slate-400">📝 {getVisibleTaskNotes(nextAction.notes)}</span>}
                     </button>
                     <div className="flex shrink-0 flex-col gap-1">
                       <button onClick={() => onEditTask(nextAction)} className="rounded-md p-1 text-slate-400 hover:bg-blue-500/15 hover:text-blue-300" title="Modifica">✏️</button>
@@ -1532,6 +1596,7 @@ export default function Home() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('active');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('all');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [unassignedOnly, setUnassignedOnly] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grouped' | 'canvas'>('list');
@@ -1781,6 +1846,7 @@ export default function Home() {
     setUnassignedOnly(false);
     setFilter('all');
     setCategoryFilter('all');
+    setAssigneeFilter('all');
     setTimeFilter('all');
     setViewMode('list');
     setActiveTab('tasks');
@@ -1793,6 +1859,7 @@ export default function Home() {
     if (selectedProjectId && task.project_id !== selectedProjectId) return false;
     if (unassignedOnly && task.project_id) return false;
     if (categoryFilter !== 'all' && task.category !== categoryFilter) return false;
+    if (assigneeFilter !== 'all' && getTaskAssignee(task) !== assigneeFilter) return false;
     const today = dateKey();
     const weekEnd = addDaysKey(7);
     if (timeFilter === 'overdue' && (!task.due_date || task.due_date >= today)) return false;
@@ -1820,7 +1887,8 @@ export default function Home() {
   const selectedProjectTasks = selectedProjectId ? tasks.filter(task => task.project_id === selectedProjectId) : [];
   const selectedProjectOpenTasks = selectedProjectTasks.filter(task => !task.completed).length;
   const selectedProjectCompletedTasks = selectedProjectTasks.length - selectedProjectOpenTasks;
-  const canManuallyReorderTasks = Boolean(selectedProjectId && filter === 'all' && categoryFilter === 'all' && timeFilter === 'all');
+  const assignees = [...new Set(tasks.map(getTaskAssignee).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
+  const canManuallyReorderTasks = Boolean(selectedProjectId && filter === 'all' && categoryFilter === 'all' && assigneeFilter === 'all' && timeFilter === 'all');
 
   if (loading) {
     return (
@@ -2057,6 +2125,18 @@ export default function Home() {
               </select>
 
               <select
+                value={assigneeFilter}
+                onChange={(e) => setAssigneeFilter(e.target.value)}
+                aria-label="Filtra per responsabile"
+                className="bg-slate-800 border-2 border-slate-700 rounded-lg px-3 py-1 text-sm font-medium focus:outline-none text-white"
+              >
+                <option value="all">Tutti i responsabili</option>
+                {assignees.map(assignee => (
+                  <option key={assignee} value={assignee}>👤 {assignee}</option>
+                ))}
+              </select>
+
+              <select
                 value={selectedProjectId || ''}
                 onChange={(e) => {
                   setSelectedProjectId(e.target.value || null);
@@ -2119,6 +2199,7 @@ export default function Home() {
                       onClick={() => {
                         setFilter('all');
                         setCategoryFilter('all');
+                        setAssigneeFilter('all');
                         setTimeFilter('all');
                       }}
                       className="rounded-xl border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400"
