@@ -30,6 +30,16 @@ function formatReminderForInput(value: string | null) {
 
 const assigneeNotePattern = /^\[\[responsabile:(.*?)\]\](?:\r?\n|$)/i;
 
+type ViewerProfile = 'virgilio' | 'marco' | 'ida';
+
+const viewerLabels: Record<ViewerProfile, string> = {
+  virgilio: 'Virgilio',
+  marco: 'Marco',
+  ida: 'Ida',
+};
+
+const VIEWER_PROFILE_KEY = 'switchboard.viewer-profile';
+
 function getTaskAssignee(task: Pick<Task, 'text' | 'notes'>) {
   const storedAssignee = task.notes.match(assigneeNotePattern)?.[1]?.trim();
   if (storedAssignee) return storedAssignee;
@@ -55,6 +65,29 @@ function removeMatchingAssigneePrefix(text: string, assignee: string) {
   return assignee.trim() && cleanText.startsWith(prefix)
     ? cleanText.slice(prefix.length).trim()
     : cleanText;
+}
+
+function normalizePersonName(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function taskBelongsOnlyToVirgilio(task: Pick<Task, 'text' | 'notes' | 'category'>) {
+  const assignee = normalizePersonName(getTaskAssignee(task));
+  const mentionsVirgilio = /\b(virgilio|maretto)\b/.test(assignee);
+  const mentionsMarcoOrIda = /\b(marco|pizzuto|ida|bianco)\b/.test(assignee);
+
+  if (mentionsVirgilio && !mentionsMarcoOrIda) return true;
+
+  // I task personali senza un responsabile esplicito sono considerati di Virgilio.
+  return task.category === 'personal' && !mentionsMarcoOrIda;
+}
+
+function taskIsVisibleToViewer(task: Task, viewer: ViewerProfile) {
+  if (viewer === 'virgilio') return true;
+  return !taskBelongsOnlyToVirgilio(task);
 }
 
 function QuickCapture({ onAdd }: { onAdd: (text: string) => void }) {
@@ -732,26 +765,24 @@ function AddTaskModal({
   onAdd,
   projects,
   defaultProjectId = null,
+  defaultAssignee = '',
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
   onAdd: (task: Omit<Task, 'id' | 'created_at'>) => void;
   projects: Project[];
   defaultProjectId?: string | null;
+  defaultAssignee?: string;
 }) {
   const [text, setText] = useState('');
   const [notes, setNotes] = useState('');
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [category, setCategory] = useState<'work' | 'admin' | 'personal' | 'travel'>('work');
   const [projectId, setProjectId] = useState<string | null>(defaultProjectId);
-  const [assignee, setAssignee] = useState('');
+  const [assignee, setAssignee] = useState(defaultAssignee);
   const [dueDate, setDueDate] = useState('');
   const [remindAt, setRemindAt] = useState('');
   const [reminderChannel, setReminderChannel] = useState<'telegram' | 'email'>('telegram');
-
-  useEffect(() => {
-    if (isOpen) setProjectId(defaultProjectId);
-  }, [isOpen, defaultProjectId]);
 
   if (!isOpen) return null;
 
@@ -777,7 +808,7 @@ function AddTaskModal({
       setPriority('medium');
       setCategory('work');
       setProjectId(null);
-      setAssignee('');
+      setAssignee(defaultAssignee);
       setDueDate('');
       setRemindAt('');
       setReminderChannel('telegram');
@@ -1612,6 +1643,7 @@ export default function Home() {
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [lastSyncError, setLastSyncError] = useState<string | null>(null);
+  const [viewerProfile, setViewerProfile] = useState<ViewerProfile>('virgilio');
 
   async function refreshData(showLoader = false) {
     if (showLoader) setLoading(true);
@@ -1634,11 +1666,24 @@ export default function Home() {
   }
 
   useEffect(() => {
+    const profileFromUrl = new URLSearchParams(window.location.search).get('profilo');
+    const storedProfile = window.localStorage.getItem(VIEWER_PROFILE_KEY);
+    const requestedProfile = profileFromUrl ?? storedProfile;
+    const profileTimer = window.setTimeout(() => {
+      if (requestedProfile === 'virgilio' || requestedProfile === 'marco' || requestedProfile === 'ida') {
+        setViewerProfile(requestedProfile);
+        window.localStorage.setItem(VIEWER_PROFILE_KEY, requestedProfile);
+      }
+    }, 0);
+
     const timer = window.setTimeout(() => {
       void refreshData(true);
     }, 0);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(profileTimer);
+      window.clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -1665,6 +1710,16 @@ export default function Home() {
     setPendingSyncCount(syncStatus.pendingCount);
     setSyncing(syncStatus.syncing);
     setLastSyncError(syncStatus.lastSyncError);
+  };
+
+  const handleViewerProfileChange = (profile: ViewerProfile) => {
+    setViewerProfile(profile);
+    window.localStorage.setItem(VIEWER_PROFILE_KEY, profile);
+    const url = new URL(window.location.href);
+    url.searchParams.set('profilo', profile);
+    window.history.replaceState({}, '', url);
+    setAssigneeFilter('all');
+    setSelectedProjectId(null);
   };
 
   const retrySync = async () => {
@@ -1717,7 +1772,7 @@ export default function Home() {
     const siblingTasks = tasks.filter(task => task.project_id === selectedProjectId);
     const newTask = await addTask({
       text,
-      notes: '',
+      notes: storeAssigneeInNotes('', viewerLabels[viewerProfile]),
       project_id: selectedProjectId,
       priority: 'medium',
       due_date: null,
@@ -1904,8 +1959,10 @@ export default function Home() {
     setActiveTab('tasks');
   };
 
+  const visibleTasks = tasks.filter(task => taskIsVisibleToViewer(task, viewerProfile));
+
   // Filter tasks
-  const filteredTasks = tasks.filter(task => {
+  const filteredTasks = visibleTasks.filter(task => {
     if (filter === 'active' && task.completed) return false;
     if (filter === 'completed' && !task.completed) return false;
     if (selectedProjectId && task.project_id !== selectedProjectId) return false;
@@ -1932,14 +1989,14 @@ export default function Home() {
   });
 
   // Stats
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter(t => t.completed).length;
-  const highPriorityTasks = tasks.filter(t => !t.completed && t.priority === 'high').length;
+  const totalTasks = visibleTasks.length;
+  const completedTasks = visibleTasks.filter(t => t.completed).length;
+  const highPriorityTasks = visibleTasks.filter(t => !t.completed && t.priority === 'high').length;
   const selectedProject = selectedProjectId ? projects.find(project => project.id === selectedProjectId) : undefined;
-  const selectedProjectTasks = selectedProjectId ? tasks.filter(task => task.project_id === selectedProjectId) : [];
+  const selectedProjectTasks = selectedProjectId ? visibleTasks.filter(task => task.project_id === selectedProjectId) : [];
   const selectedProjectOpenTasks = selectedProjectTasks.filter(task => !task.completed).length;
   const selectedProjectCompletedTasks = selectedProjectTasks.length - selectedProjectOpenTasks;
-  const assignees = [...new Set(tasks.map(getTaskAssignee).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
+  const assignees = [...new Set(visibleTasks.map(getTaskAssignee).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
   const canManuallyReorderTasks = Boolean(selectedProjectId && filter === 'all' && categoryFilter === 'all' && assigneeFilter === 'all' && timeFilter === 'all');
 
   if (loading) {
@@ -1965,7 +2022,20 @@ export default function Home() {
                 Task & Projects • {backendMode === 'remote' ? 'Supabase' : 'Modalita locale'}
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <label className="flex items-center gap-2 rounded-xl border-2 border-slate-600 bg-slate-700 px-3 py-2 text-sm font-semibold text-slate-200">
+                <span className="hidden sm:inline">Vista di</span>
+                <select
+                  value={viewerProfile}
+                  onChange={(event) => handleViewerProfileChange(event.target.value as ViewerProfile)}
+                  className="bg-transparent text-white focus:outline-none"
+                  aria-label="Profilo di visualizzazione"
+                >
+                  <option value="virgilio">Virgilio · tutto</option>
+                  <option value="marco">Marco · team</option>
+                  <option value="ida">Ida · team</option>
+                </select>
+              </label>
               <button
                 onClick={() => setShowAddTask(true)}
                 className="bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 px-4 py-2 rounded-xl text-sm font-semibold"
@@ -2084,7 +2154,7 @@ export default function Home() {
       <div className="mx-auto max-w-[1500px] px-4 py-6">
         {activeTab === 'overview' && (
           <OverviewDashboard
-            tasks={tasks}
+            tasks={visibleTasks}
             projects={projects}
             onToggleTask={handleToggleTask}
             onEditTask={setEditingTask}
@@ -2368,7 +2438,7 @@ export default function Home() {
         {activeTab === 'areas' && (
           <AreaBoard
             projects={projects}
-            tasks={tasks}
+            tasks={visibleTasks}
             onMoveProject={handleMoveProjectToArea}
             onOpenProject={(projectId) => handleOpenProject(projectId, 'areas')}
             onEditProject={setEditingProject}
@@ -2418,12 +2488,13 @@ export default function Home() {
 
       {/* Modals */}
       <AddTaskModal
-        key={selectedProjectId ?? 'add-task'}
+        key={`${selectedProjectId ?? 'add-task'}-${viewerProfile}-${showAddTask ? 'open' : 'closed'}`}
         isOpen={showAddTask}
         onClose={() => setShowAddTask(false)}
         onAdd={handleAddTask}
         projects={projects}
         defaultProjectId={selectedProjectId}
+        defaultAssignee={viewerLabels[viewerProfile]}
       />
       
       <AddProjectModal
