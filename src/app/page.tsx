@@ -90,6 +90,65 @@ function taskIsVisibleToViewer(task: Task, viewer: ViewerProfile) {
   return !taskBelongsOnlyToVirgilio(task);
 }
 
+const defaultAssigneeOptions = [
+  'Virgilio',
+  'Marco',
+  'Ida',
+  'Virgilio + Marco',
+  'Virgilio + Ida',
+  'Marco + Ida',
+  'Virgilio + Marco + Ida',
+];
+
+function AssigneeSelect({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}) {
+  const normalizedOptions = [...new Set([...defaultAssigneeOptions, ...options, ...(value ? [value] : [])])]
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'it'));
+  const [customMode, setCustomMode] = useState(false);
+
+  return (
+    <div className="space-y-2">
+      <select
+        value={customMode ? '__custom__' : value}
+        onChange={(event) => {
+          if (event.target.value === '__custom__') {
+            setCustomMode(true);
+            onChange('');
+            return;
+          }
+          setCustomMode(false);
+          onChange(event.target.value);
+        }}
+        className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-violet-500"
+      >
+        <option value="">Nessun responsabile</option>
+        {normalizedOptions.map(option => (
+          <option key={option} value={option}>👤 {option}</option>
+        ))}
+        <option value="__custom__">+ Altro responsabile…</option>
+      </select>
+      {customMode && (
+        <input
+          type="text"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Nome o combinazione di responsabili"
+          className="w-full bg-slate-700 border-2 border-violet-500/60 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-violet-400"
+          autoFocus
+        />
+      )}
+    </div>
+  );
+}
+
 function QuickCapture({ onAdd }: { onAdd: (text: string) => void }) {
   const [text, setText] = useState('');
 
@@ -276,6 +335,7 @@ function KanbanColumn({
   title,
   status,
   projects,
+  tasks,
   onMoveProject,
   onSelectProject,
   onEditProject,
@@ -284,13 +344,23 @@ function KanbanColumn({
   title: string;
   status: 'backlog' | 'active' | 'done';
   projects: Project[];
+  tasks: Task[];
   onMoveProject: (projectId: string, newStatus: 'backlog' | 'active' | 'done') => void;
   onSelectProject: (projectId: string | null) => void;
   onEditProject: (project: Project) => void;
   selectedProjectId: string | null;
 }) {
   const [dragOver, setDragOver] = useState(false);
-  const columnProjects = projects.filter(p => p.status === status);
+  const columnProjects = projects.filter(project => {
+    if (project.is_area) return false;
+    const hasOpenTasks = tasks.some(task => task.project_id === project.id && !task.completed);
+    const effectiveStatus = !hasOpenTasks
+      ? 'done'
+      : project.status === 'backlog'
+        ? 'backlog'
+        : 'active';
+    return effectiveStatus === status;
+  });
 
   const statusColors = {
     backlog: 'border-slate-600 bg-slate-800/50',
@@ -351,6 +421,9 @@ function KanbanColumn({
               </button>
             </div>
             <p className="text-xs text-slate-400 mt-1 line-clamp-2">{project.description}</p>
+            <p className="mt-1 text-[10px] font-semibold text-slate-400">
+              {tasks.filter(task => task.project_id === project.id && !task.completed).length} task attivi
+            </p>
             {project.parent_project_id && (() => {
               const parent = projects.find(candidate => candidate.id === project.parent_project_id);
               return parent ? <p className="mt-1 text-[10px] font-semibold text-blue-300">↳ {parent.emoji} {parent.name}</p> : null;
@@ -546,13 +619,15 @@ function EditTaskModal({
   onClose, 
   task,
   onSave,
-  projects 
+  projects,
+  assigneeOptions,
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
   task: Task | null;
   onSave: (taskId: string, updates: Partial<Task>) => void;
   projects: Project[];
+  assigneeOptions: string[];
 }) {
   const initialTask = task ?? {
     id: '',
@@ -680,12 +755,10 @@ function EditTaskModal({
 
           <div>
             <label className="block text-sm text-slate-300 mb-1 font-medium">Responsabile</label>
-            <input
-              type="text"
+            <AssigneeSelect
               value={assignee}
-              onChange={(e) => setAssignee(e.target.value)}
-              placeholder="Es. Marco, Ida oppure Virgilio + Simone"
-              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-violet-500"
+              onChange={setAssignee}
+              options={assigneeOptions}
             />
           </div>
           
@@ -766,6 +839,7 @@ function AddTaskModal({
   projects,
   defaultProjectId = null,
   defaultAssignee = '',
+  assigneeOptions,
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
@@ -773,6 +847,7 @@ function AddTaskModal({
   projects: Project[];
   defaultProjectId?: string | null;
   defaultAssignee?: string;
+  assigneeOptions: string[];
 }) {
   const [text, setText] = useState('');
   const [notes, setNotes] = useState('');
@@ -893,12 +968,10 @@ function AddTaskModal({
 
           <div>
             <label className="block text-sm text-slate-300 mb-1 font-medium">Responsabile</label>
-            <input
-              type="text"
+            <AssigneeSelect
               value={assignee}
-              onChange={(e) => setAssignee(e.target.value)}
-              placeholder="Es. Marco, Ida oppure Virgilio + Simone"
-              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-violet-500"
+              onChange={setAssignee}
+              options={assigneeOptions}
             />
           </div>
           
@@ -1997,6 +2070,7 @@ export default function Home() {
   const selectedProjectOpenTasks = selectedProjectTasks.filter(task => !task.completed).length;
   const selectedProjectCompletedTasks = selectedProjectTasks.length - selectedProjectOpenTasks;
   const assignees = [...new Set(visibleTasks.map(getTaskAssignee).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
+  const allAssignees = [...new Set(tasks.map(getTaskAssignee).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
   const canManuallyReorderTasks = Boolean(selectedProjectId && filter === 'all' && categoryFilter === 'all' && assigneeFilter === 'all' && timeFilter === 'all');
 
   if (loading) {
@@ -2452,6 +2526,7 @@ export default function Home() {
                 title="📥 Backlog"
                 status="backlog"
                 projects={projects}
+                tasks={visibleTasks}
                 onMoveProject={handleMoveProject}
                 onSelectProject={(id) => {
                   if (id) handleOpenProject(id, 'projects');
@@ -2463,6 +2538,7 @@ export default function Home() {
                 title="🔄 In Corso"
                 status="active"
                 projects={projects}
+                tasks={visibleTasks}
                 onMoveProject={handleMoveProject}
                 onSelectProject={(id) => {
                   if (id) handleOpenProject(id, 'projects');
@@ -2474,6 +2550,7 @@ export default function Home() {
                 title="✅ Completati"
                 status="done"
                 projects={projects}
+                tasks={visibleTasks}
                 onMoveProject={handleMoveProject}
                 onSelectProject={(id) => {
                   if (id) handleOpenProject(id, 'projects');
@@ -2495,6 +2572,7 @@ export default function Home() {
         projects={projects}
         defaultProjectId={selectedProjectId}
         defaultAssignee={viewerLabels[viewerProfile]}
+        assigneeOptions={allAssignees}
       />
       
       <AddProjectModal
@@ -2530,6 +2608,7 @@ export default function Home() {
         task={editingTask}
         onSave={handleUpdateTask}
         projects={projects}
+        assigneeOptions={allAssignees}
       />
     </main>
   );
