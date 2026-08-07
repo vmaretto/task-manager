@@ -80,6 +80,122 @@ Configurazione consigliata del tasto Azione:
 Riferimenti Apple: [Aprire URL in Comandi Rapidi](https://support.apple.com/it-it/guide/shortcuts/apd621a1ad7a/ios)
 e [assegnare un comando rapido al tasto Azione](https://support.apple.com/it-it/guide/shortcuts/apdfea15680b/ios).
 
+## Task vocale sicuro da Comandi Rapidi
+
+La pagina mobile-first di configurazione e disponibile alla route:
+
+```text
+https://task-manager-dusky-chi-88.vercel.app/voice-task
+```
+
+Il Comando Rapido invia la dettatura a:
+
+```text
+POST https://task-manager-dusky-chi-88.vercel.app/api/voice-tasks
+Authorization: Bearer INCOLLA_QUI_IL_TOKEN_REALE
+Content-Type: application/json
+
+{"transcript":"Testo dettato"}
+```
+
+`INCOLLA_QUI_IL_TOKEN_REALE` e solo un placeholder, non e un token utilizzabile.
+Il token reale viene mostrato dalla pagina una sola volta quando viene generato o
+rigenerato. La trascrizione non viene mai inserita nell'URL o nella query string.
+La risposta JSON contiene `message`, per esempio `Task creato: Chiamare Giuseppe`
+oppure `Creato da rivedere: Verificare preventivo`.
+
+### Configurazione server e ordine di pubblicazione
+
+Il codice locale non basta da solo. Prima di pubblicare:
+
+1. Eseguire [`migration_voice_tasks.sql`](./migration_voice_tasks.sql) nel SQL
+   Editor del progetto Supabase. La migrazione e idempotente e aggiunge
+   `tasks.needs_review`, `tasks.source`, le tabelle di token/audit, indici, RLS e
+   la funzione atomica di rotazione.
+2. Impostare in Vercel, solo come variabili server:
+   - `SUPABASE_SERVICE_ROLE_KEY`: service role del progetto Supabase;
+   - `VOICE_TASK_ADMIN_SECRET`: segreto casuale di almeno 24 caratteri, usato
+     esclusivamente per generare/revocare token dalla pagina;
+   - `NEXT_PUBLIC_SUPABASE_URL`: gia usata dall'app, necessaria anche alle route.
+3. Pubblicare il codice e verificare che la route `/voice-task` e l'endpoint
+   HTTPS definitivo rispondano.
+4. Solo dopo la pubblicazione, aprire `/voice-task`, inserire la chiave di
+   gestione, generare il token personale e copiarlo subito.
+
+L'app non dispone ancora di un vero login Supabase: la chiave di gestione server
+e quindi il controllo amministrativo necessario per la UI. Non viene salvata in
+`localStorage`. I token personali sono casuali, in tabella viene conservato solo
+SHA-256, e le tabelle `voice_task_tokens` e `voice_task_events` non hanno policy
+pubbliche. Le route server usano la service role; lo Shortcut non dipende da
+cookie Safari. Non inserire mai `SUPABASE_SERVICE_ROLE_KEY` o
+`VOICE_TASK_ADMIN_SECRET` nel Comando Rapido.
+
+### Configurazione esatta in Comandi Rapidi
+
+Questi passaggi vanno eseguiti **dopo** migrazione e pubblicazione, quando l'URL
+definitivo e raggiungibile.
+
+1. Aprire la pagina **Task vocale**, scegliere il profilo, inserire la chiave di
+   gestione e premere **Genera token**. Premere **Copia token personale**. Non
+   condividere il valore: chi lo possiede puo creare task per quel profilo.
+2. Su iPhone aprire **Comandi Rapidi**, toccare **+**, rinominare il nuovo comando
+   `Task vocale` e toccare **Aggiungi azione**.
+3. Cercare e aggiungere **Detta testo** come prima azione. Espandere l'azione.
+   Se la versione di iOS mostra questi campi, impostare:
+   - **Lingua:** `Italiano`;
+   - **Interrompi ascolto:** `Dopo una pausa`.
+   Se i campi non compaiono, non aggiungere azioni sostitutive: Apple varia i
+   controlli visibili tra versioni e usa le impostazioni di Dettatura di sistema.
+   L'output richiesto nei passaggi successivi e la variabile **Testo dettato**.
+4. Cercare e aggiungere **URL** come seconda azione. Nel campo URL incollare:
+   `https://task-manager-dusky-chi-88.vercel.app/api/voice-tasks`.
+5. Aggiungere **Ottieni contenuti dell'URL** come terza azione. Toccare
+   **Mostra altro** e impostare:
+   - **Metodo:** `POST`;
+   - in **Intestazioni**, aggiungere la chiave `Authorization` e come valore
+     `Bearer INCOLLA_QUI_IL_TOKEN_REALE`, sostituendo l'intero placeholder con
+     il token copiato al punto 1; tra `Bearer` e il token deve restare uno spazio;
+   - in **Corpo richiesta**, scegliere `JSON`, aggiungere la chiave di testo
+     `transcript` e assegnarle la variabile magica **Testo dettato** del punto 3.
+6. Aggiungere **Ottieni valore dizionario**. Nel campo della chiave scrivere
+   `message`; come dizionario usare l'output **Contenuti dell'URL** del punto 5.
+7. Aggiungere **Mostra risultato** e selezionare come contenuto il valore
+   dizionario del punto 6. Avviare una prova: deve apparire una conferma leggibile.
+8. Aprire **Impostazioni → Tasto Azione**, scorrere fino a **Comando rapido**,
+   toccare **Scegli un comando rapido** e selezionare `Task vocale`.
+
+Apple documenta i metodi e il corpo JSON in
+[Ottieni contenuti dell'URL](https://support.apple.com/it-it/guide/shortcuts/apd58d46713f/ios),
+l'estrazione della risposta con
+[Ottieni valore dizionario](https://support.apple.com/it-it/guide/shortcuts/apd9cf19a736/ios)
+e l'assegnazione in
+[Usare il tasto Azione con Comandi Rapidi](https://support.apple.com/it-it/guide/shortcuts/apdfea15680b/ios).
+Se **Detta testo** non compare o non acquisisce audio, verificare che Dettatura
+sia abilitata in **Impostazioni → Generali → Tastiera → Abilita dettatura**, come
+indicato nella [guida Apple alla Dettatura](https://support.apple.com/it-it/guide/iphone/iph2c0651d2/ios).
+
+### Interpretazione e revisione
+
+Il parser e intenzionalmente deterministico: non e configurata alcuna
+integrazione LLM nel progetto. Riconosce `oggi`, `domani`, `dopodomani`, date
+`gg/mm[/aaaa]`, date italiane come `12 agosto 2026`, priorita alta/media/bassa,
+`urgente`, nomi dei progetti attivi e responsabili esplicitamente introdotti da
+`responsabile` o `assegna a`. Non inventa campi mancanti. Conflitti, date non
+valide, progetti o responsabili sconosciuti producono `needs_review = true` e il
+badge **Da rivedere** nella dashboard.
+
+Le ultime cinque elaborazioni sono mostrate nella pagina di configurazione solo
+dopo l'autorizzazione amministrativa. L'audit conserva una anteprima massima di
+160 caratteri e il risultato strutturato, mai il token.
+
+Per i controlli locali:
+
+```bash
+npm test
+npm run lint
+npm run build
+```
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

@@ -14,6 +14,8 @@ export interface Task {
   completed: boolean;
   workflow_status: 'active' | 'waiting';
   is_today_priority: boolean;
+  needs_review?: boolean;
+  source?: 'manual' | 'voice';
   remind_at: string | null;
   reminder_channel: 'telegram' | 'email';
   reminder_status: 'pending' | 'sent' | 'skipped';
@@ -136,6 +138,8 @@ function getDefaultTasks(): Task[] {
     category: 'work' as const,
     completed: false,
     is_today_priority: false,
+    needs_review: false,
+    source: 'manual' as const,
     remind_at: null,
     reminder_channel: 'telegram' as const,
     reminder_status: 'pending' as const,
@@ -393,6 +397,8 @@ function normalizeTask(task: Partial<Task>): Task {
     completed,
     workflow_status: workflowStatus,
     is_today_priority: Boolean(task.is_today_priority) && !completed && workflowStatus === 'active',
+    needs_review: task.needs_review ?? false,
+    source: task.source ?? 'manual',
     remind_at: task.remind_at ?? null,
     reminder_channel: task.reminder_channel ?? 'telegram',
     reminder_status: task.reminder_status ?? 'pending',

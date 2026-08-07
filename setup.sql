@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   completed BOOLEAN DEFAULT false,
   workflow_status TEXT NOT NULL DEFAULT 'active' CHECK (workflow_status IN ('active', 'waiting')),
   is_today_priority BOOLEAN NOT NULL DEFAULT false,
+  needs_review BOOLEAN NOT NULL DEFAULT false,
+  source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'voice')),
   remind_at TIMESTAMP WITH TIME ZONE,
   reminder_channel TEXT DEFAULT 'telegram' CHECK (reminder_channel IN ('telegram', 'email')),
   reminder_status TEXT DEFAULT 'pending' CHECK (reminder_status IN ('pending', 'sent', 'skipped')),
@@ -39,6 +41,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS remind_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS workflow_status TEXT NOT NULL DEFAULT 'active';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_today_priority BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS needs_review BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_channel TEXT DEFAULT 'telegram';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_status TEXT DEFAULT 'pending';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMP WITH TIME ZONE;
@@ -105,6 +109,81 @@ BEFORE INSERT OR UPDATE OF is_today_priority, completed, workflow_status
 ON tasks
 FOR EACH ROW
 EXECUTE FUNCTION enforce_tasks_today_priority_rules();
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'tasks_source_check'
+      AND conrelid = 'tasks'::regclass
+  ) THEN
+    ALTER TABLE tasks
+      ADD CONSTRAINT tasks_source_check CHECK (source IN ('manual', 'voice'));
+  END IF;
+END $$;
+
+-- Token personali per Comandi Rapidi. Nessun token in chiaro viene persistito.
+CREATE TABLE IF NOT EXISTS voice_task_tokens (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  owner_profile TEXT NOT NULL CHECK (owner_profile IN ('virgilio', 'marco', 'ida')),
+  token_hash TEXT NOT NULL UNIQUE,
+  token_prefix TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMP WITH TIME ZONE,
+  revoked_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS voice_task_tokens_one_active_per_profile_idx
+  ON voice_task_tokens(owner_profile) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS voice_task_tokens_hash_active_idx
+  ON voice_task_tokens(token_hash) WHERE revoked_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS voice_task_events (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  token_id UUID REFERENCES voice_task_tokens(id) ON DELETE SET NULL,
+  owner_profile TEXT NOT NULL CHECK (owner_profile IN ('virgilio', 'marco', 'ida')),
+  transcript_preview TEXT NOT NULL,
+  parse_result JSONB NOT NULL DEFAULT '{}'::jsonb,
+  task_id UUID REFERENCES tasks(id) ON DELETE SET NULL,
+  status TEXT NOT NULL CHECK (status IN ('created', 'needs_review', 'failed')),
+  message TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS voice_task_events_profile_created_idx
+  ON voice_task_events(owner_profile, created_at DESC);
+CREATE INDEX IF NOT EXISTS voice_task_events_token_created_idx
+  ON voice_task_events(token_id, created_at DESC);
+
+ALTER TABLE voice_task_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE voice_task_events ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE voice_task_tokens FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE voice_task_events FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION rotate_voice_task_token(profile_name TEXT, new_token_hash TEXT, new_token_prefix TEXT)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  created_id UUID;
+BEGIN
+  IF profile_name NOT IN ('virgilio', 'marco', 'ida') THEN
+    RAISE EXCEPTION 'Profilo vocale non valido.' USING ERRCODE = '22023';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtext('voice-task-token:' || profile_name));
+  UPDATE voice_task_tokens SET revoked_at = NOW()
+    WHERE owner_profile = profile_name AND revoked_at IS NULL;
+  INSERT INTO voice_task_tokens (owner_profile, token_hash, token_prefix)
+    VALUES (profile_name, new_token_hash, new_token_prefix)
+    RETURNING id INTO created_id;
+  RETURN created_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION rotate_voice_task_token(TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION rotate_voice_task_token(TEXT, TEXT, TEXT) TO service_role;
 
 -- Enable RLS
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;

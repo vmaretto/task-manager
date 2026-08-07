@@ -296,6 +296,12 @@ function TaskItem({
                 📌 Fissata oggi
               </span>
             )}
+
+            {task.needs_review && (
+              <span className="rounded-md border border-amber-400/40 bg-amber-500/15 px-2 py-1 text-xs font-semibold text-amber-100">
+                🎙️ Da rivedere
+              </span>
+            )}
             
             {project && (
               <span 
@@ -741,21 +747,24 @@ function EditTaskModal({
   const [reminderStatus, setReminderStatus] = useState<'pending' | 'sent' | 'skipped'>(initialTask.reminder_status ?? 'pending');
   const [workflowStatus, setWorkflowStatus] = useState<'active' | 'waiting'>(initialTask.workflow_status ?? 'active');
   const [isTodayPriority, setIsTodayPriority] = useState(initialTask.is_today_priority ?? false);
+  const [needsReview, setNeedsReview] = useState(initialTask.needs_review ?? false);
 
   if (!isOpen || !task) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (text.trim()) {
+      const reviewedNotes = needsReview ? notes : notes.replace(/^Da rivedere:.*(?:\r?\n|$)/i, '').trim();
       onSave(task.id, {
         text: removeMatchingAssigneePrefix(text, assignee),
-        notes: storeAssigneeInNotes(notes, assignee),
+        notes: storeAssigneeInNotes(reviewedNotes, assignee),
         priority,
         category,
         project_id: projectId,
         due_date: dueDate || null,
         workflow_status: workflowStatus,
         is_today_priority: !task.completed && workflowStatus === 'active' && isTodayPriority,
+        needs_review: needsReview,
         remind_at: remindAt ? new Date(remindAt).toISOString() : null,
         reminder_channel: reminderChannel,
         reminder_status: remindAt ? reminderStatus : 'pending',
@@ -881,6 +890,18 @@ function EditTaskModal({
             disabledReason={task.completed ? 'I task completati non possono restare fissati.' : workflowStatus === 'waiting' ? 'Un task in attesa non può essere fissato. Riportalo “In azione” per abilitarlo.' : undefined}
             onUnpinTask={onUnpinTask}
           />
+
+          {task.needs_review && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-100">
+              <input
+                type="checkbox"
+                checked={needsReview}
+                onChange={(event) => setNeedsReview(event.target.checked)}
+                className="mt-0.5 h-5 w-5 accent-amber-500"
+              />
+              <span><strong className="block">Mantieni “Da rivedere”</strong><span className="mt-1 block text-xs text-amber-100/70">Togli la spunta solo dopo aver verificato i dati interpretati dalla voce.</span></span>
+            </label>
+          )}
 
           <div>
             <label className="block text-sm text-slate-300 mb-1 font-medium">Reminder</label>
@@ -1640,6 +1661,7 @@ function OverviewDashboard({
                 {waiting ? 'In attesa' : task.is_today_priority ? '📌 Fissata' : prominent ? 'Critica' : task.priority === 'high' ? 'Alta' : 'Media'}
               </span>
               <span className={`text-xs font-semibold ${isOverdue ? 'text-rose-300' : task.due_date === today ? 'text-sky-300' : 'text-slate-400'}`}>{taskDateLabel(task)}</span>
+              {task.needs_review && <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-100">🎙️ Da rivedere</span>}
             </span>
             <span className={`${prominent ? 'mt-3 text-lg' : 'mt-2 text-sm'} block font-semibold leading-snug text-white`}>{task.text}</span>
             {notes && <span className="mt-1.5 line-clamp-2 block text-xs leading-relaxed text-slate-400">{notes}</span>}
@@ -2395,6 +2417,12 @@ export default function Home() {
                 className="rounded-xl border-2 border-emerald-500/40 bg-emerald-500/15 px-2 py-2 text-center text-sm font-semibold text-emerald-100 hover:bg-emerald-500/25 sm:px-4"
               >
                 ⚡ Rapida
+              </Link>
+              <Link
+                href="/voice-task"
+                className="rounded-xl border-2 border-cyan-500/40 bg-cyan-500/15 px-2 py-2 text-center text-sm font-semibold text-cyan-100 hover:bg-cyan-500/25 sm:px-4"
+              >
+                🎙️ Voce
               </Link>
               <button
                 onClick={() => setShowAddTask(true)}
