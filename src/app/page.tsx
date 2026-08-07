@@ -285,6 +285,10 @@ function TaskItem({
                 👤 {assignee}
               </span>
             )}
+
+            <span className={`text-xs px-2 py-1 rounded-md border font-medium ${task.workflow_status === 'waiting' ? 'border-violet-500/40 bg-violet-500/15 text-violet-200' : 'border-sky-500/30 bg-sky-500/10 text-sky-200'}`}>
+              {task.workflow_status === 'waiting' ? 'In attesa' : 'In azione'}
+            </span>
             
             {project && (
               <span 
@@ -638,6 +642,7 @@ function EditTaskModal({
     project_id: null,
     due_date: '',
     completed: false,
+    workflow_status: 'active' as const,
     remind_at: null,
     reminder_channel: 'telegram' as const,
     reminder_status: 'pending' as const,
@@ -658,6 +663,7 @@ function EditTaskModal({
   const [remindAt, setRemindAt] = useState(formatReminderForInput(initialTask.remind_at));
   const [reminderChannel, setReminderChannel] = useState<'telegram' | 'email'>(initialTask.reminder_channel ?? 'telegram');
   const [reminderStatus, setReminderStatus] = useState<'pending' | 'sent' | 'skipped'>(initialTask.reminder_status ?? 'pending');
+  const [workflowStatus, setWorkflowStatus] = useState<'active' | 'waiting'>(initialTask.workflow_status ?? 'active');
 
   if (!isOpen || !task) return null;
 
@@ -671,6 +677,7 @@ function EditTaskModal({
         category,
         project_id: projectId,
         due_date: dueDate || null,
+        workflow_status: workflowStatus,
         remind_at: remindAt ? new Date(remindAt).toISOString() : null,
         reminder_channel: reminderChannel,
         reminder_status: remindAt ? reminderStatus : 'pending',
@@ -683,7 +690,7 @@ function EditTaskModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onClose}>
       <div 
-        className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border-2 border-slate-600 shadow-2xl"
+        className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border-2 border-slate-600 bg-slate-800 p-6 shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         <h3 className="text-xl font-bold mb-4 text-white">✏️ Modifica Task</h3>
@@ -773,6 +780,18 @@ function EditTaskModal({
           </div>
 
           <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Stato operativo</label>
+            <select
+              value={workflowStatus}
+              onChange={(e) => setWorkflowStatus(e.target.value as 'active' | 'waiting')}
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
+            >
+              <option value="active">In azione</option>
+              <option value="waiting">In attesa</option>
+            </select>
+          </div>
+
+          <div>
             <label className="block text-sm text-slate-300 mb-1 font-medium">Reminder</label>
             <input
               type="datetime-local"
@@ -858,6 +877,7 @@ function AddTaskModal({
   const [dueDate, setDueDate] = useState('');
   const [remindAt, setRemindAt] = useState('');
   const [reminderChannel, setReminderChannel] = useState<'telegram' | 'email'>('telegram');
+  const [workflowStatus, setWorkflowStatus] = useState<'active' | 'waiting'>('active');
 
   if (!isOpen) return null;
 
@@ -872,6 +892,7 @@ function AddTaskModal({
         project_id: projectId,
         due_date: dueDate || null,
         completed: false,
+        workflow_status: workflowStatus,
         remind_at: remindAt ? new Date(remindAt).toISOString() : null,
         reminder_channel: reminderChannel,
         reminder_status: 'pending',
@@ -887,6 +908,7 @@ function AddTaskModal({
       setDueDate('');
       setRemindAt('');
       setReminderChannel('telegram');
+      setWorkflowStatus('active');
       onClose();
     }
   };
@@ -894,7 +916,7 @@ function AddTaskModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onClose}>
       <div 
-        className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border-2 border-slate-600 shadow-2xl"
+        className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border-2 border-slate-600 bg-slate-800 p-6 shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         <h3 className="text-xl font-bold mb-4 text-white">➕ Nuovo Task</h3>
@@ -983,6 +1005,18 @@ function AddTaskModal({
               onChange={(e) => setDueDate(e.target.value)}
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Stato operativo</label>
+            <select
+              value={workflowStatus}
+              onChange={(e) => setWorkflowStatus(e.target.value as 'active' | 'waiting')}
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
+            >
+              <option value="active">In azione</option>
+              <option value="waiting">In attesa</option>
+            </select>
           </div>
 
           <div>
@@ -1089,7 +1123,7 @@ function EditProjectModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onClose}>
-      <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border-2 border-slate-600 shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border-2 border-slate-600 bg-slate-800 p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
         <h3 className="text-xl font-bold mb-4 text-white">✏️ Modifica Progetto</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -1213,7 +1247,7 @@ function AddProjectModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onClose}>
       <div 
-        className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border-2 border-slate-600 shadow-2xl"
+        className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border-2 border-slate-600 bg-slate-800 p-6 shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         <h3 className="text-xl font-bold mb-4 text-white">{defaultIsArea ? '🗂️ Nuova Area' : '📁 Nuovo Progetto'}</h3>
@@ -1331,6 +1365,7 @@ function OverviewDashboard({
   projects,
   onToggleTask,
   onEditTask,
+  onUpdateTask,
   onDeleteTask,
   onOpenTasks,
   onOpenProjects,
@@ -1339,6 +1374,7 @@ function OverviewDashboard({
   projects: Project[];
   onToggleTask: (taskId: string) => void | Promise<void>;
   onEditTask: (task: Task) => void;
+  onUpdateTask: (taskId: string, updates: Partial<Task>) => void | Promise<void>;
   onDeleteTask: (taskId: string) => void | Promise<void>;
   onOpenTasks: (timeFilter: TimeFilter, projectId?: string | null) => void;
   onOpenProjects: () => void;
@@ -1346,7 +1382,10 @@ function OverviewDashboard({
   const today = dateKey();
   const weekEnd = addDaysKey(7);
   const openTasks = tasks.filter(task => !task.completed);
-  const dashboardTasks = openTasks.filter(task => task.priority !== 'low');
+  const dashboardTasks = openTasks.filter(task => task.priority !== 'low' && task.workflow_status === 'active');
+  const waitingTasks = openTasks
+    .filter(task => task.workflow_status === 'waiting')
+    .sort((a, b) => (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31'));
   const overdueTasks = openTasks.filter(task => task.due_date && task.due_date < today);
   const todayTasks = openTasks.filter(task => task.due_date === today);
   const weekTasks = openTasks.filter(task => task.due_date && task.due_date > today && task.due_date <= weekEnd);
@@ -1362,7 +1401,17 @@ function OverviewDashboard({
       if (aUrgency !== bUrgency) return aUrgency - bUrgency;
       return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31');
     })
-    .slice(0, 5);
+    .slice(0, 3);
+  const criticalTaskIds = new Set(focusTasks.map(task => task.id));
+  const weekFocusTasks = [...dashboardTasks]
+    .filter(task => !criticalTaskIds.has(task.id))
+    .sort((a, b) => {
+      const aInWeek = a.due_date && a.due_date <= weekEnd ? 0 : 1;
+      const bInWeek = b.due_date && b.due_date <= weekEnd ? 0 : 1;
+      if (aInWeek !== bInWeek) return aInWeek - bInWeek;
+      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) return priorityOrder[a.priority] - priorityOrder[b.priority];
+      return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31');
+    });
 
   const posterProjects: Array<Project & { synthetic?: boolean }> = [
     ...projects,
@@ -1437,8 +1486,113 @@ function OverviewDashboard({
     { label: 'Senza data', value: unscheduledTasks.length, helper: 'da pianificare', filter: 'unscheduled', tone: 'border-slate-600 bg-slate-800/80 text-slate-100' },
   ];
 
+  const taskDateLabel = (task: Task) => {
+    if (!task.due_date) return 'Senza scadenza';
+    if (task.due_date < today) return `Scaduto · ${new Date(`${task.due_date}T12:00:00`).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}`;
+    if (task.due_date === today) return 'Scade oggi';
+    if (task.due_date === addDaysKey(1)) return 'Domani';
+    return new Date(`${task.due_date}T12:00:00`).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+  };
+
+  const renderPriorityTask = (task: Task, prominent = false) => {
+    const project = projects.find(item => item.id === task.project_id);
+    const assignee = getTaskAssignee(task);
+    const notes = getVisibleTaskNotes(task.notes);
+    const waiting = task.workflow_status === 'waiting';
+    const isOverdue = Boolean(task.due_date && task.due_date < today);
+
+    return (
+      <article
+        key={task.id}
+        className={`group rounded-2xl border p-4 transition hover:-translate-y-0.5 ${prominent ? 'border-rose-400/35 bg-gradient-to-br from-rose-500/12 via-slate-900 to-slate-900 shadow-xl shadow-rose-950/10' : 'border-slate-700 bg-slate-900/55 hover:border-slate-500'}`}
+      >
+        <div className="flex items-start gap-3">
+          <button
+            onClick={() => onToggleTask(task.id)}
+            className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-transparent transition hover:border-emerald-400 hover:bg-emerald-500/15 ${prominent ? 'border-rose-300/60' : 'border-slate-500'}`}
+            aria-label={`Completa ${task.text}`}
+            title="Completa"
+          >
+            ✓
+          </button>
+          <button onClick={() => onEditTask(task)} className="min-w-0 flex-1 text-left">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${waiting ? 'bg-violet-500/15 text-violet-200' : prominent ? 'bg-rose-500/20 text-rose-100' : 'bg-amber-500/15 text-amber-200'}`}>
+                {waiting ? 'In attesa' : prominent ? 'Critica' : task.priority === 'high' ? 'Alta' : 'Media'}
+              </span>
+              <span className={`text-xs font-semibold ${isOverdue ? 'text-rose-300' : task.due_date === today ? 'text-sky-300' : 'text-slate-400'}`}>{taskDateLabel(task)}</span>
+            </span>
+            <span className={`${prominent ? 'mt-3 text-lg' : 'mt-2 text-sm'} block font-semibold leading-snug text-white`}>{task.text}</span>
+            {notes && <span className="mt-1.5 line-clamp-2 block text-xs leading-relaxed text-slate-400">{notes}</span>}
+          </button>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-700/70 pt-3 text-xs">
+          <span className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-slate-300">{project ? `${project.emoji} ${project.name}` : '◌ Senza progetto'}</span>
+          <span className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-slate-300">{assignee ? `👤 ${assignee}` : '👤 Non assegnato'}</span>
+          <div className="ml-auto flex gap-1.5">
+            <button
+              onClick={() => void onUpdateTask(task.id, waiting ? { workflow_status: 'active', due_date: today } : { due_date: addDaysKey(1) })}
+              className="rounded-lg border border-slate-600 px-2.5 py-1.5 font-semibold text-slate-300 hover:border-blue-400 hover:bg-blue-500/10 hover:text-blue-200"
+              title={waiting ? 'Riporta tra le attività da fare' : 'Sposta la scadenza a domani'}
+            >
+              {waiting ? 'Riattiva' : 'Domani'}
+            </button>
+            <button onClick={() => onEditTask(task)} className="rounded-lg border border-slate-600 px-2.5 py-1.5 font-semibold text-slate-300 hover:border-slate-400 hover:text-white">Modifica</button>
+          </div>
+        </div>
+      </article>
+    );
+  };
+
   return (
     <div className="space-y-6">
+      <section aria-labelledby="today-priorities" className="overflow-hidden rounded-3xl border border-slate-700/80 bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,.22),transparent_38%),linear-gradient(135deg,#111827,#0f172a_55%,#172554)] p-4 shadow-2xl shadow-slate-950/30 sm:p-6 lg:p-8">
+        <div className="flex flex-col gap-5 border-b border-slate-700/80 pb-6 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-sm font-semibold capitalize text-blue-300">{dateLabel}</p>
+            <h2 id="today-priorities" className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-5xl">Priorità di oggi</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">{firstNameGreeting}. Parti da queste tre azioni: sono quelle con maggior impatto e urgenza.</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center text-xs sm:min-w-[330px]">
+            <div className="rounded-2xl border border-rose-500/25 bg-rose-500/10 px-3 py-3"><span className="block text-2xl font-bold text-rose-200">{focusTasks.length}</span><span className="text-rose-200/75">critiche</span></div>
+            <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 px-3 py-3"><span className="block text-2xl font-bold text-amber-100">{weekFocusTasks.length}</span><span className="text-amber-100/75">in agenda</span></div>
+            <div className="rounded-2xl border border-violet-500/25 bg-violet-500/10 px-3 py-3"><span className="block text-2xl font-bold text-violet-100">{waitingTasks.length}</span><span className="text-violet-100/75">in attesa</span></div>
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-rose-300">Le 3 essenziali</p>
+              <h3 className="mt-1 text-xl font-bold text-white">Da sbloccare per prime</h3>
+            </div>
+            <span className="hidden text-xs text-slate-400 sm:block">Completa o rimanda con un gesto</span>
+          </div>
+          {focusTasks.length > 0 ? (
+            <div className="grid gap-3 lg:grid-cols-3">{focusTasks.map(task => renderPriorityTask(task, true))}</div>
+          ) : (
+            <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-5 text-emerald-100">Nessuna priorità critica aperta. Ottimo momento per pianificare la settimana.</div>
+          )}
+        </div>
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,.55fr)]">
+        <section aria-labelledby="week-priorities" className="rounded-3xl border border-slate-700 bg-slate-800/45 p-4 sm:p-6">
+          <div className="mb-4 flex items-end justify-between gap-4">
+            <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-300">Questa settimana</p><h2 id="week-priorities" className="mt-1 text-2xl font-bold text-white">Prossime azioni</h2></div>
+            <button onClick={() => onOpenTasks('week')} className="text-sm font-semibold text-blue-300 hover:text-blue-200">Vedi tutti →</button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">{weekFocusTasks.map(task => renderPriorityTask(task))}</div>
+          {weekFocusTasks.length === 0 && <p className="rounded-2xl border border-dashed border-slate-700 p-5 text-sm text-slate-400">Nessun’altra azione attiva da pianificare.</p>}
+        </section>
+
+        <section aria-labelledby="waiting-priorities" className="rounded-3xl border border-violet-500/20 bg-violet-950/15 p-4 sm:p-6">
+          <div className="mb-4"><p className="text-xs font-bold uppercase tracking-[0.2em] text-violet-300">In attesa</p><h2 id="waiting-priorities" className="mt-1 text-2xl font-bold text-white">Da tenere nel radar</h2><p className="mt-1 text-sm text-slate-400">Dipendenze e conferme esterne, senza rumore nel focus.</p></div>
+          <div className="space-y-3">{waitingTasks.map(task => renderPriorityTask(task))}</div>
+          {waitingTasks.length === 0 && <p className="rounded-2xl border border-dashed border-violet-500/20 p-5 text-sm text-slate-400">Nessuna attività in attesa.</p>}
+        </section>
+      </div>
+
       <section aria-labelledby="project-map" className="overflow-hidden rounded-3xl border border-slate-700/80 bg-gradient-to-br from-slate-800 via-slate-900 to-blue-950/60 p-4 shadow-2xl shadow-slate-950/30 sm:p-6">
         <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -1851,6 +2005,7 @@ export default function Home() {
       due_date: null,
       category: 'work',
       completed: false,
+      workflow_status: 'active',
       remind_at: null,
       reminder_channel: 'telegram',
       reminder_status: 'pending',
@@ -2089,15 +2244,15 @@ export default function Home() {
       {/* Header */}
       <header className="border-b border-slate-700 bg-slate-800 shadow-lg">
         <div className="mx-auto max-w-[1500px] px-4 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-bold text-white">⚡ SwitchBoard</h1>
               <p className="text-sm text-slate-400">
                 Task & Projects • {backendMode === 'remote' ? 'Supabase' : 'Modalita locale'}
               </p>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <label className="flex items-center gap-2 rounded-xl border-2 border-slate-600 bg-slate-700 px-3 py-2 text-sm font-semibold text-slate-200">
+            <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
+              <label className="col-span-3 flex items-center gap-2 rounded-xl border-2 border-slate-600 bg-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 sm:col-span-1">
                 <span className="hidden sm:inline">Vista di</span>
                 <select
                   value={viewerProfile}
@@ -2112,19 +2267,19 @@ export default function Home() {
               </label>
               <button
                 onClick={() => setShowAddTask(true)}
-                className="bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 px-4 py-2 rounded-xl text-sm font-semibold"
+                className="bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 px-2 py-2 rounded-xl text-sm font-semibold sm:px-4"
               >
                 + Task
               </button>
               <button
                 onClick={() => setShowAddProject(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-2 rounded-xl text-sm font-semibold sm:px-4"
               >
                 + Progetto
               </button>
               <button
                 onClick={() => setShowAddArea(true)}
-                className="bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-xl text-sm font-semibold"
+                className="bg-violet-600 hover:bg-violet-500 text-white px-2 py-2 rounded-xl text-sm font-semibold sm:px-4"
               >
                 + Area
               </button>
@@ -2132,7 +2287,7 @@ export default function Home() {
           </div>
 
           {backendMode === 'local' && (
-            <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border-2 border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            <div className="mt-4 flex flex-col gap-4 rounded-xl border-2 border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="font-semibold">Sincronizzazione temporaneamente sospesa.</div>
                 <div>
@@ -2153,7 +2308,7 @@ export default function Home() {
                 type="button"
                 onClick={() => void retrySync()}
                 disabled={syncing}
-                className="shrink-0 rounded-lg border border-amber-300/40 bg-amber-400/15 px-3 py-2 font-semibold text-amber-100 hover:bg-amber-400/25 disabled:cursor-wait disabled:opacity-60"
+                className="w-full shrink-0 rounded-lg border border-amber-300/40 bg-amber-400/15 px-3 py-2 font-semibold text-amber-100 hover:bg-amber-400/25 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
               >
                 {syncing ? 'Sincronizzazione…' : 'Sincronizza ora'}
               </button>
@@ -2187,7 +2342,7 @@ export default function Home() {
       {/* Tab Navigation */}
       <nav className="border-b border-slate-700 bg-slate-900/80 sticky top-0 z-20 backdrop-blur-xl">
         <div className="mx-auto max-w-[1500px] px-4">
-          <div className="flex gap-2 overflow-x-auto py-3">
+          <div className="nav-scroll flex gap-2 overflow-x-auto py-3">
             <button
               onClick={() => setActiveTab('overview')}
               className={`whitespace-nowrap px-4 py-2 rounded-xl font-semibold transition-colors ${
@@ -2232,6 +2387,7 @@ export default function Home() {
             projects={projects}
             onToggleTask={handleToggleTask}
             onEditTask={setEditingTask}
+            onUpdateTask={handleUpdateTask}
             onDeleteTask={handleDeleteTask}
             onOpenTasks={(nextTimeFilter, projectId) => {
               setTaskReturnTab('overview');

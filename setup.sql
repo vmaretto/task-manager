@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   due_date DATE,
   category TEXT DEFAULT 'work' CHECK (category IN ('work', 'admin', 'personal', 'travel')),
   completed BOOLEAN DEFAULT false,
+  workflow_status TEXT NOT NULL DEFAULT 'active' CHECK (workflow_status IN ('active', 'waiting')),
   remind_at TIMESTAMP WITH TIME ZONE,
   reminder_channel TEXT DEFAULT 'telegram' CHECK (reminder_channel IN ('telegram', 'email')),
   reminder_status TEXT DEFAULT 'pending' CHECK (reminder_status IN ('pending', 'sent', 'skipped')),
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS remind_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS workflow_status TEXT NOT NULL DEFAULT 'active';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_channel TEXT DEFAULT 'telegram';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_status TEXT DEFAULT 'pending';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMP WITH TIME ZONE;

@@ -12,6 +12,7 @@ export interface Task {
   due_date: string | null;
   category: 'work' | 'admin' | 'personal' | 'travel';
   completed: boolean;
+  workflow_status: 'active' | 'waiting';
   remind_at: string | null;
   reminder_channel: 'telegram' | 'email';
   reminder_status: 'pending' | 'sent' | 'skipped';
@@ -60,6 +61,7 @@ const TASKS_KEY = 'switchboard.tasks';
 const PROJECTS_KEY = 'switchboard.projects';
 const SYNC_QUEUE_KEY = 'switchboard.sync-queue';
 const SYNC_META_KEY = 'switchboard.sync-meta';
+const TODAY_PRIORITIES_SEED_KEY = 'switchboard.today-priorities-seed-v1';
 
 const defaultProjects: Project[] = [
   {
@@ -106,7 +108,52 @@ const defaultProjects: Project[] = [
     is_area: false,
     sort_order: 3,
   },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Coach', status: 'active', color: '#f97316', emoji: '🤝', description: 'Sessioni di coaching', parent_project_id: null, is_area: false, sort_order: 4 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000002', name: 'FIB', status: 'active', color: '#ef4444', emoji: '🏦', description: 'Amministrazione FIB', parent_project_id: null, is_area: false, sort_order: 5 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000003', name: 'GAL', status: 'active', color: '#22c55e', emoji: '🧾', description: 'Fatturazione GAL', parent_project_id: null, is_area: false, sort_order: 6 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000004', name: 'WISE', status: 'active', color: '#06b6d4', emoji: '🔗', description: 'Integrazione dati e interfacce', parent_project_id: null, is_area: false, sort_order: 7 },
+  { id: '88888888-8888-8888-8888-888888888888', name: 'Birra Peroni / BEST', status: 'active', color: '#eab308', emoji: '🍺', description: 'Manutenzione ed evoluzione BEST', parent_project_id: null, is_area: false, sort_order: 8 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000005', name: 'Nastro Azzurro', status: 'active', color: '#3b82f6', emoji: '🔵', description: 'Coordinamento Nastro Azzurro', parent_project_id: null, is_area: false, sort_order: 9 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000006', name: 'Scanner', status: 'active', color: '#64748b', emoji: '📦', description: 'Logistica scanner', parent_project_id: null, is_area: false, sort_order: 10 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000007', name: 'EFL', status: 'active', color: '#8b5cf6', emoji: '📊', description: 'Indicatori e caricamenti', parent_project_id: null, is_area: false, sort_order: 11 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000008', name: 'VFF', status: 'active', color: '#ec4899', emoji: '📅', description: 'Coordinamento Value for Food', parent_project_id: null, is_area: false, sort_order: 12 },
 ];
+
+function localDateKeyWithOffset(days: number) {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + days);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getDefaultTasks(): Task[] {
+  const createdAt = nowIso();
+  const base = {
+    category: 'work' as const,
+    completed: false,
+    remind_at: null,
+    reminder_channel: 'telegram' as const,
+    reminder_status: 'pending' as const,
+    reminded_at: null,
+    created_at: createdAt,
+  };
+
+  return [
+    { ...base, id: 'bbbbbbbb-0000-4000-8000-000000000001', text: 'Rieseguire o verificare bonifico Coach (€400)', notes: 'Bonifico per 5 sessioni tentato e rifiutato.', project_id: 'aaaaaaaa-0000-4000-8000-000000000001', priority: 'high', due_date: localDateKeyWithOffset(0), workflow_status: 'active', sort_order: 0 },
+    { ...base, id: 'bbbbbbbb-0000-4000-8000-000000000002', text: 'Rieseguire o verificare il terzo bonifico FIB', notes: 'Due bonifici utili netti risultano eseguiti; il terzo è stato rifiutato.', project_id: 'aaaaaaaa-0000-4000-8000-000000000002', priority: 'high', due_date: localDateKeyWithOffset(0), workflow_status: 'active', sort_order: 1 },
+    { ...base, id: 'bbbbbbbb-0000-4000-8000-000000000003', text: 'Verificare emissione e invio della prima fattura GAL', notes: 'I dati necessari sono già stati inviati.', project_id: 'aaaaaaaa-0000-4000-8000-000000000003', priority: 'high', due_date: localDateKeyWithOffset(0), workflow_status: 'active', sort_order: 2 },
+    { ...base, id: 'bbbbbbbb-0000-4000-8000-000000000004', text: 'Riprendere integrazione dati e interfacce WISE con Giuseppe', notes: '[[responsabile:Virgilio + Giuseppe]]', project_id: 'aaaaaaaa-0000-4000-8000-000000000004', priority: 'medium', due_date: localDateKeyWithOffset(1), workflow_status: 'active', sort_order: 3 },
+    { ...base, id: 'bbbbbbbb-0000-4000-8000-000000000005', text: 'Chiarire suddivisione e invio file Peroni', notes: 'Ripresa prevista dal 25 agosto.', project_id: '88888888-8888-8888-8888-888888888888', priority: 'medium', due_date: '2026-08-25', workflow_status: 'waiting', sort_order: 4 },
+    { ...base, id: 'bbbbbbbb-0000-4000-8000-000000000006', text: 'Ottenere conferma e fissare allineamento Nastro Azzurro', notes: 'In attesa di conferma.', project_id: 'aaaaaaaa-0000-4000-8000-000000000005', priority: 'medium', due_date: null, workflow_status: 'waiting', sort_order: 5 },
+    { ...base, id: 'bbbbbbbb-0000-4000-8000-000000000007', text: 'Confermare destinazione e spedizione scanner', notes: '', project_id: 'aaaaaaaa-0000-4000-8000-000000000006', priority: 'medium', due_date: localDateKeyWithOffset(2), workflow_status: 'active', sort_order: 6 },
+    { ...base, id: 'bbbbbbbb-0000-4000-8000-000000000008', text: 'Allineare gli indicatori e provare il caricamento massivo EFL', notes: '', project_id: 'aaaaaaaa-0000-4000-8000-000000000007', priority: 'high', due_date: localDateKeyWithOffset(3), workflow_status: 'active', sort_order: 7 },
+    { ...base, id: 'bbbbbbbb-0000-4000-8000-000000000009', text: 'Chiudere accordo Confagricoltura e correggere le presenze', notes: '', project_id: '11111111-1111-1111-1111-111111111111', priority: 'high', due_date: localDateKeyWithOffset(4), workflow_status: 'active', sort_order: 8 },
+    { ...base, id: 'bbbbbbbb-0000-4000-8000-000000000010', text: 'Preparare e rispondere alla riunione VFF dell’8 settembre', notes: '', project_id: 'aaaaaaaa-0000-4000-8000-000000000008', priority: 'medium', due_date: '2026-09-08', workflow_status: 'active', sort_order: 9 },
+  ];
+}
 
 const defaultSyncMeta = {
   lastSyncAt: null as string | null,
@@ -149,7 +196,7 @@ function ensureLocalSeeds() {
   }
 
   if (!window.localStorage.getItem(TASKS_KEY)) {
-    writeLocal<Task[]>(TASKS_KEY, []);
+    writeLocal<Task[]>(TASKS_KEY, getDefaultTasks());
   }
 
   if (!window.localStorage.getItem(SYNC_QUEUE_KEY)) {
@@ -158,6 +205,33 @@ function ensureLocalSeeds() {
 
   if (!window.localStorage.getItem(SYNC_META_KEY)) {
     writeLocal(SYNC_META_KEY, defaultSyncMeta);
+  }
+
+  // The browser-only demo receives the same initial priorities as the SQL
+  // migration. Merge once by project name/task text and never reset user data.
+  // Configured Supabase clients use migration_today_priorities.sql instead.
+  if (!supabase && !window.localStorage.getItem(TODAY_PRIORITIES_SEED_KEY)) {
+    const existingProjects = readLocal<Project[]>(PROJECTS_KEY, []);
+    const knownProjectNames = new Set(existingProjects.map(project => project.name.trim().toLocaleLowerCase('it')));
+    const mergedProjects = [
+      ...existingProjects,
+      ...defaultProjects.filter(project => !knownProjectNames.has(project.name.trim().toLocaleLowerCase('it'))),
+    ];
+    const projectIdByName = new Map(mergedProjects.map(project => [project.name.trim().toLocaleLowerCase('it'), project.id]));
+    const seededProjectIdByName = new Map(defaultProjects.map(project => [project.id, project.name.trim().toLocaleLowerCase('it')]));
+
+    const existingTasks = readLocal<Task[]>(TASKS_KEY, []);
+    const knownTaskTexts = new Set(existingTasks.map(task => task.text.trim().toLocaleLowerCase('it')));
+    const missingTasks = getDefaultTasks()
+      .filter(task => !knownTaskTexts.has(task.text.trim().toLocaleLowerCase('it')))
+      .map(task => {
+        const projectName = task.project_id ? seededProjectIdByName.get(task.project_id) : undefined;
+        return projectName ? { ...task, project_id: projectIdByName.get(projectName) ?? task.project_id } : task;
+      });
+
+    writeProjectsLocal(mergedProjects);
+    writeTasksLocal([...existingTasks, ...missingTasks]);
+    window.localStorage.setItem(TODAY_PRIORITIES_SEED_KEY, '1');
   }
 }
 
@@ -306,6 +380,7 @@ function normalizeTask(task: Partial<Task>): Task {
     due_date: task.due_date ?? null,
     category: task.category ?? 'work',
     completed: task.completed ?? false,
+    workflow_status: task.workflow_status ?? 'active',
     remind_at: task.remind_at ?? null,
     reminder_channel: task.reminder_channel ?? 'telegram',
     reminder_status: task.reminder_status ?? 'pending',
