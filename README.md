@@ -99,45 +99,91 @@ Content-Type: application/json
 ```
 
 `INCOLLA_QUI_IL_TOKEN_REALE` e solo un placeholder, non e un token utilizzabile.
-Il token reale viene mostrato dalla pagina una sola volta quando viene generato o
-rigenerato. La trascrizione non viene mai inserita nell'URL o nella query string.
+Il token reale viene mostrato dalla pagina una sola volta dopo un abbinamento
+monouso. La trascrizione non viene mai inserita nell'URL o nella query string.
 La risposta JSON contiene `message`, per esempio `Task creato: Chiamare Giuseppe`
 oppure `Creato da rivedere: Verificare preventivo`.
+
+### Esperienza utente: una volta e ogni giorno
+
+Una sola volta, per ogni iPhone da configurare:
+
+1. L'amministratore crea un codice di abbinamento associato al profilo. Il codice
+   ha 100 bit di entropia, scade dopo 15 minuti e puo essere consumato una volta.
+2. L'utente apre `/voice-task`, inserisce quel codice e riceve il token personale.
+   Non vede e non inserisce mai `VOICE_TASK_ADMIN_SECRET`.
+3. L'utente copia il token nel Comando Rapido e assegna il comando al tasto Azione.
+
+Da quel momento, per ogni task: **premere il tasto Azione, dettare, leggere la
+conferma**. Non occorre riaprire la pagina o ripetere l'abbinamento. In caso di
+iPhone perso, token dimenticato o nuovo dispositivo, l'amministratore revoca il
+token precedente e genera un nuovo codice monouso.
+
+### Architettura dell'abbinamento
+
+L'app non dispone ancora di identita Supabase reali: `virgilio`, `marco` e `ida`
+sono preferenze applicative, non account autenticati, e le policy operative
+preesistenti non sono per-utente. Un magic-link limitato alla sola pagina vocale
+non sarebbe quindi una protezione completa: richiederebbe prima account, mapping
+profilo/utente e revisione delle RLS dell'intera app.
+
+L'onboarding usa invece un pairing a capacita limitata:
+
+- `VOICE_TASK_ADMIN_SECRET` resta esclusivamente lato server e protegge soltanto
+  la creazione/revoca amministrativa;
+- `/api/voice-token` crea il codice monouso solo con header Bearer amministrativo;
+- `/api/voice-pair` accetta il codice nel corpo JSON HTTPS, mai nell'URL;
+- `exchange_voice_task_pairing` consuma il codice e ruota il token in una singola
+  transazione, impedendo doppi utilizzi concorrenti;
+- database conserva solo SHA-256 di codici e token; le relative tabelle hanno RLS
+  attiva e nessuna policy per `anon` o `authenticated`.
+
+Il compromesso e operativo: senza un login utente verificabile, l'amministratore
+deve consegnare il codice monouso attraverso un canale diretto. L'utente compie
+comunque il setup una sola volta e non conosce alcun segreto di infrastruttura.
 
 ### Configurazione server e ordine di pubblicazione
 
 Il codice locale non basta da solo. Prima di pubblicare:
 
-1. Eseguire [`migration_voice_tasks.sql`](./migration_voice_tasks.sql) nel SQL
-   Editor del progetto Supabase. La migrazione e idempotente e aggiunge
-   `tasks.needs_review`, `tasks.source`, le tabelle di token/audit, indici, RLS e
-   la funzione atomica di rotazione.
+1. Eseguire [`migration_voice_tasks.sql`](./migration_voice_tasks.sql), quindi
+   [`migration_voice_pairing_onboarding.sql`](./migration_voice_pairing_onboarding.sql)
+   nel SQL Editor del progetto Supabase. Entrambe sono idempotenti.
 2. Impostare in Vercel, solo come variabili server:
    - `SUPABASE_SERVICE_ROLE_KEY`: service role del progetto Supabase;
    - `VOICE_TASK_ADMIN_SECRET`: segreto casuale di almeno 24 caratteri, usato
-     esclusivamente per generare/revocare token dalla pagina;
+     esclusivamente dalle operazioni amministrative e mai inviato al browser;
    - `NEXT_PUBLIC_SUPABASE_URL`: gia usata dall'app, necessaria anche alle route.
-3. Pubblicare il codice e verificare che la route `/voice-task` e l'endpoint
-   HTTPS definitivo rispondano.
-4. Solo dopo la pubblicazione, aprire `/voice-task`, inserire la chiave di
-   gestione, generare il token personale e copiarlo subito.
+3. Pubblicare e verificare `/voice-task`, `/api/voice-pair` e `/api/voice-tasks`.
 
-L'app non dispone ancora di un vero login Supabase: la chiave di gestione server
-e quindi il controllo amministrativo necessario per la UI. Non viene salvata in
-`localStorage`. I token personali sono casuali, in tabella viene conservato solo
-SHA-256, e le tabelle `voice_task_tokens` e `voice_task_events` non hanno policy
-pubbliche. Le route server usano la service role; lo Shortcut non dipende da
-cookie Safari. Non inserire mai `SUPABASE_SERVICE_ROLE_KEY` o
-`VOICE_TASK_ADMIN_SECRET` nel Comando Rapido.
+Nel setup attuale il percorso amministrativo piu semplice e il SQL Editor
+Supabase autenticato. Una singola chiamata genera e restituisce il codice:
+
+```sql
+SELECT * FROM create_voice_task_pairing('virgilio');
+```
+
+La funzione non e eseguibile da `anon` o `authenticated`; resta disponibile al
+proprietario del database e alla service role. In alternativa, da un terminale
+amministrativo che dispone gia del segreto, caricare
+`VOICE_TASK_ADMIN_SECRET` nell'ambiente senza inserirlo negli argomenti, poi:
+
+```bash
+npm run voice:pair -- --profile=virgilio
+```
+
+Per un ambiente diverso impostare anche `VOICE_TASK_BASE_URL`. Lo script stampa
+solo il codice monouso e la scadenza; non stampa il segreto amministrativo. Non
+inserire mai `SUPABASE_SERVICE_ROLE_KEY` o `VOICE_TASK_ADMIN_SECRET` nel Comando
+Rapido.
 
 ### Configurazione esatta in Comandi Rapidi
 
-Questi passaggi vanno eseguiti **dopo** migrazione e pubblicazione, quando l'URL
-definitivo e raggiungibile.
+Questi passaggi si eseguono **una sola volta** per iPhone.
 
-1. Aprire la pagina **Task vocale**, scegliere il profilo, inserire la chiave di
-   gestione e premere **Genera token**. Premere **Copia token personale**. Non
-   condividere il valore: chi lo possiede puo creare task per quel profilo.
+1. Ricevere dall'amministratore il codice monouso, aprire **Task vocale**, inserirlo
+   e premere **Abbina e mostra il mio token**. Premere **Copia token personale**.
+   Non condividere il token: chi lo possiede puo creare task per quel profilo.
 2. Su iPhone aprire **Comandi Rapidi**, toccare **+**, rinominare il nuovo comando
    `Task vocale` e toccare **Aggiungi azione**.
 3. Cercare e aggiungere **Detta testo** come prima azione. Espandere l'azione.
@@ -184,9 +230,9 @@ integrazione LLM nel progetto. Riconosce `oggi`, `domani`, `dopodomani`, date
 valide, progetti o responsabili sconosciuti producono `needs_review = true` e il
 badge **Da rivedere** nella dashboard.
 
-Le ultime cinque elaborazioni sono mostrate nella pagina di configurazione solo
-dopo l'autorizzazione amministrativa. L'audit conserva una anteprima massima di
-160 caratteri e il risultato strutturato, mai il token.
+L'audit conserva una anteprima massima di 160 caratteri e il risultato strutturato,
+mai il token. Non viene esposto nella pagina pubblica di onboarding perche, senza
+login utente, non e possibile autorizzarne la lettura in modo affidabile.
 
 Per i controlli locali:
 

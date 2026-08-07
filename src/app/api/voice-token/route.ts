@@ -1,11 +1,21 @@
-import { createVoiceToken, getBearerToken, getVoiceServerClient, hashVoiceToken, isAuthorizedAdmin, isVoiceProfile, noStoreJson } from '@/lib/voice-task-server';
+import {
+  createVoicePairingCode,
+  createVoiceToken,
+  getBearerToken,
+  getVoiceServerClient,
+  hashVoicePairingCode,
+  hashVoiceToken,
+  isAuthorizedAdmin,
+  isVoiceProfile,
+  noStoreJson,
+} from '@/lib/voice-task-server';
 
 export const runtime = 'nodejs';
 
-type TokenAction = 'status' | 'generate' | 'regenerate' | 'revoke';
+type TokenAction = 'status' | 'create_pairing' | 'generate' | 'regenerate' | 'revoke';
 
 function isTokenAction(value: unknown): value is TokenAction {
-  return value === 'status' || value === 'generate' || value === 'regenerate' || value === 'revoke';
+  return value === 'status' || value === 'create_pairing' || value === 'generate' || value === 'regenerate' || value === 'revoke';
 }
 
 async function loadStatus(profile: string) {
@@ -54,6 +64,35 @@ export async function POST(request: Request) {
   try {
     const supabase = getVoiceServerClient();
     if (action === 'status') return noStoreJson(await loadStatus(profile));
+
+    if (action === 'create_pairing') {
+      const pairingCode = createVoicePairingCode();
+      const pairingCodeHash = hashVoicePairingCode(pairingCode);
+      if (!pairingCodeHash) throw new Error('Codice di abbinamento non valido.');
+
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 15 * 60_000).toISOString();
+      const { error: expireError } = await supabase
+        .from('voice_task_pairings')
+        .update({ used_at: now.toISOString() })
+        .eq('owner_profile', profile)
+        .is('used_at', null);
+      if (expireError) throw expireError;
+
+      const { error: pairingError } = await supabase.from('voice_task_pairings').insert({
+        owner_profile: profile,
+        code_hash: pairingCodeHash,
+        code_prefix: pairingCode.slice(0, 8),
+        expires_at: expiresAt,
+      });
+      if (pairingError) throw pairingError;
+
+      return noStoreJson({
+        pairing_code: pairingCode,
+        expires_at: expiresAt,
+        message: `Codice monouso creato per ${profile}. Scade tra 15 minuti.`,
+      }, { status: 201 });
+    }
 
     if (action === 'revoke') {
       const { error } = await supabase

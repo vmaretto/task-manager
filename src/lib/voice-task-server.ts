@@ -5,6 +5,9 @@ export type VoiceProfile = 'virgilio' | 'marco' | 'ida';
 
 export const voiceProfiles: VoiceProfile[] = ['virgilio', 'marco', 'ida'];
 
+const PAIRING_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const PAIRING_CODE_SYMBOLS = 20;
+
 let serverClient: SupabaseClient | null = null;
 
 export function getVoiceServerClient() {
@@ -33,6 +36,26 @@ export function hashVoiceToken(token: string) {
 
 export function createVoiceToken() {
   return `vtt_${randomBytes(32).toString('base64url')}`;
+}
+
+export function createVoicePairingCode() {
+  const bytes = randomBytes(PAIRING_CODE_SYMBOLS);
+  const symbols = Array.from(bytes, byte => PAIRING_CODE_ALPHABET[byte % PAIRING_CODE_ALPHABET.length]).join('');
+  return `VTP-${symbols.match(/.{1,4}/g)?.join('-')}`;
+}
+
+export function normalizeVoicePairingCode(value: string) {
+  const compact = value.toUpperCase().replace(/[\s-]/g, '');
+  if (!compact.startsWith('VTP')) return null;
+  const symbols = compact.slice(3);
+  if (symbols.length !== PAIRING_CODE_SYMBOLS) return null;
+  if ([...symbols].some(symbol => !PAIRING_CODE_ALPHABET.includes(symbol))) return null;
+  return `VTP-${symbols.match(/.{1,4}/g)?.join('-')}`;
+}
+
+export function hashVoicePairingCode(code: string) {
+  const normalized = normalizeVoicePairingCode(code);
+  return normalized ? hashVoiceToken(normalized) : null;
 }
 
 export function isAuthorizedAdmin(value: string | null) {
