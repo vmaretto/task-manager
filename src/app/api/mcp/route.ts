@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 async function handle(request: Request) {
-  if (!isAuthorizedTaskPortalMcp(request.headers.get('authorization')?.replace(/^Bearer\\s+/i, '') ?? null)) {
+  if (!isAuthorizedTaskPortalMcp(request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? null)) {
     return noStoreJson({ error: 'Autorizzazione MCP non valida.' }, { status: 401 });
   }
   const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
