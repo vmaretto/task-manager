@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import CanvasView from './CanvasView';
 import { Task, Project, getTasks, getProjects, addTask, updateTask, updateTaskOrder, deleteTask, addProject, updateProject, updateProjectOrder, deleteProject, getBackendMode, getSyncStatus, syncPendingChanges } from '../lib/supabase';
 
@@ -289,6 +290,12 @@ function TaskItem({
             <span className={`text-xs px-2 py-1 rounded-md border font-medium ${task.workflow_status === 'waiting' ? 'border-violet-500/40 bg-violet-500/15 text-violet-200' : 'border-sky-500/30 bg-sky-500/10 text-sky-200'}`}>
               {task.workflow_status === 'waiting' ? 'In attesa' : 'In azione'}
             </span>
+
+            {task.is_today_priority && (
+              <span className="rounded-md border border-rose-400/40 bg-rose-500/15 px-2 py-1 text-xs font-semibold text-rose-100">
+                📌 Fissata oggi
+              </span>
+            )}
             
             {project && (
               <span 
@@ -618,6 +625,70 @@ function AreaBoard({
   );
 }
 
+function TodayPriorityControl({
+  checked,
+  onChange,
+  pinnedTasks,
+  currentTaskId,
+  disabledReason,
+  onUnpinTask,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  pinnedTasks: Task[];
+  currentTaskId?: string;
+  disabledReason?: string;
+  onUnpinTask: (taskId: string) => void | Promise<void>;
+}) {
+  const otherPinnedTasks = pinnedTasks.filter(task => task.id !== currentTaskId);
+  const limitReached = !checked && otherPinnedTasks.length >= 3;
+  const disabled = Boolean(disabledReason) || limitReached;
+
+  return (
+    <div className={`rounded-xl border p-3 ${checked ? 'border-rose-400/50 bg-rose-500/10' : 'border-slate-600 bg-slate-900/35'}`}>
+      <label className={`flex items-start gap-3 ${disabled ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'}`}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+          disabled={disabled}
+          className="mt-0.5 h-5 w-5 shrink-0 accent-rose-500"
+        />
+        <span>
+          <span className="block text-sm font-bold text-white">📌 Fissa tra le priorità di oggi</span>
+          <span className="mt-1 block text-xs leading-relaxed text-slate-400">
+            Occupa uno dei tre posti principali della dashboard, prima delle priorità calcolate.
+          </span>
+        </span>
+      </label>
+
+      {disabledReason && <p className="mt-2 text-xs font-medium text-amber-200">{disabledReason}</p>}
+
+      {limitReached && (
+        <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+          <p className="text-xs font-semibold leading-relaxed text-amber-100">
+            Hai già fissato 3 attività. Rimuovine una prima di fissare questa.
+          </p>
+          <div className="mt-2 space-y-2">
+            {otherPinnedTasks.slice(0, 3).map(task => (
+              <div key={task.id} className="flex items-center gap-2 rounded-lg bg-slate-950/35 px-2.5 py-2">
+                <span className="min-w-0 flex-1 truncate text-xs text-slate-200">{task.text}</span>
+                <button
+                  type="button"
+                  onClick={() => void onUnpinTask(task.id)}
+                  className="shrink-0 rounded-md border border-slate-500 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:border-rose-300 hover:text-rose-200"
+                >
+                  Rimuovi
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EditTaskModal({ 
   isOpen, 
   onClose, 
@@ -625,6 +696,8 @@ function EditTaskModal({
   onSave,
   projects,
   assigneeOptions,
+  pinnedTasks,
+  onUnpinTask,
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
@@ -632,6 +705,8 @@ function EditTaskModal({
   onSave: (taskId: string, updates: Partial<Task>) => void;
   projects: Project[];
   assigneeOptions: string[];
+  pinnedTasks: Task[];
+  onUnpinTask: (taskId: string) => void | Promise<void>;
 }) {
   const initialTask = task ?? {
     id: '',
@@ -643,6 +718,7 @@ function EditTaskModal({
     due_date: '',
     completed: false,
     workflow_status: 'active' as const,
+    is_today_priority: false,
     remind_at: null,
     reminder_channel: 'telegram' as const,
     reminder_status: 'pending' as const,
@@ -664,6 +740,7 @@ function EditTaskModal({
   const [reminderChannel, setReminderChannel] = useState<'telegram' | 'email'>(initialTask.reminder_channel ?? 'telegram');
   const [reminderStatus, setReminderStatus] = useState<'pending' | 'sent' | 'skipped'>(initialTask.reminder_status ?? 'pending');
   const [workflowStatus, setWorkflowStatus] = useState<'active' | 'waiting'>(initialTask.workflow_status ?? 'active');
+  const [isTodayPriority, setIsTodayPriority] = useState(initialTask.is_today_priority ?? false);
 
   if (!isOpen || !task) return null;
 
@@ -678,6 +755,7 @@ function EditTaskModal({
         project_id: projectId,
         due_date: dueDate || null,
         workflow_status: workflowStatus,
+        is_today_priority: !task.completed && workflowStatus === 'active' && isTodayPriority,
         remind_at: remindAt ? new Date(remindAt).toISOString() : null,
         reminder_channel: reminderChannel,
         reminder_status: remindAt ? reminderStatus : 'pending',
@@ -783,13 +861,26 @@ function EditTaskModal({
             <label className="block text-sm text-slate-300 mb-1 font-medium">Stato operativo</label>
             <select
               value={workflowStatus}
-              onChange={(e) => setWorkflowStatus(e.target.value as 'active' | 'waiting')}
+              onChange={(e) => {
+                const nextStatus = e.target.value as 'active' | 'waiting';
+                setWorkflowStatus(nextStatus);
+                if (nextStatus === 'waiting') setIsTodayPriority(false);
+              }}
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
             >
               <option value="active">In azione</option>
               <option value="waiting">In attesa</option>
             </select>
           </div>
+
+          <TodayPriorityControl
+            checked={isTodayPriority}
+            onChange={setIsTodayPriority}
+            pinnedTasks={pinnedTasks}
+            currentTaskId={task.id}
+            disabledReason={task.completed ? 'I task completati non possono restare fissati.' : workflowStatus === 'waiting' ? 'Un task in attesa non può essere fissato. Riportalo “In azione” per abilitarlo.' : undefined}
+            onUnpinTask={onUnpinTask}
+          />
 
           <div>
             <label className="block text-sm text-slate-300 mb-1 font-medium">Reminder</label>
@@ -859,6 +950,8 @@ function AddTaskModal({
   defaultProjectId = null,
   defaultAssignee = '',
   assigneeOptions,
+  pinnedTasks,
+  onUnpinTask,
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
@@ -867,6 +960,8 @@ function AddTaskModal({
   defaultProjectId?: string | null;
   defaultAssignee?: string;
   assigneeOptions: string[];
+  pinnedTasks: Task[];
+  onUnpinTask: (taskId: string) => void | Promise<void>;
 }) {
   const [text, setText] = useState('');
   const [notes, setNotes] = useState('');
@@ -878,6 +973,7 @@ function AddTaskModal({
   const [remindAt, setRemindAt] = useState('');
   const [reminderChannel, setReminderChannel] = useState<'telegram' | 'email'>('telegram');
   const [workflowStatus, setWorkflowStatus] = useState<'active' | 'waiting'>('active');
+  const [isTodayPriority, setIsTodayPriority] = useState(false);
 
   if (!isOpen) return null;
 
@@ -893,6 +989,7 @@ function AddTaskModal({
         due_date: dueDate || null,
         completed: false,
         workflow_status: workflowStatus,
+        is_today_priority: workflowStatus === 'active' && isTodayPriority,
         remind_at: remindAt ? new Date(remindAt).toISOString() : null,
         reminder_channel: reminderChannel,
         reminder_status: 'pending',
@@ -909,6 +1006,7 @@ function AddTaskModal({
       setRemindAt('');
       setReminderChannel('telegram');
       setWorkflowStatus('active');
+      setIsTodayPriority(false);
       onClose();
     }
   };
@@ -1011,13 +1109,25 @@ function AddTaskModal({
             <label className="block text-sm text-slate-300 mb-1 font-medium">Stato operativo</label>
             <select
               value={workflowStatus}
-              onChange={(e) => setWorkflowStatus(e.target.value as 'active' | 'waiting')}
+              onChange={(e) => {
+                const nextStatus = e.target.value as 'active' | 'waiting';
+                setWorkflowStatus(nextStatus);
+                if (nextStatus === 'waiting') setIsTodayPriority(false);
+              }}
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
             >
               <option value="active">In azione</option>
               <option value="waiting">In attesa</option>
             </select>
           </div>
+
+          <TodayPriorityControl
+            checked={isTodayPriority}
+            onChange={setIsTodayPriority}
+            pinnedTasks={pinnedTasks}
+            disabledReason={workflowStatus === 'waiting' ? 'Un task in attesa non può essere fissato. Riportalo “In azione” per abilitarlo.' : undefined}
+            onUnpinTask={onUnpinTask}
+          />
 
           <div>
             <label className="block text-sm text-slate-300 mb-1 font-medium">Reminder</label>
@@ -1393,15 +1503,23 @@ function OverviewDashboard({
   const unassignedTasks = openTasks.filter(task => !task.project_id);
 
   const priorityOrder = { high: 0, medium: 1, low: 2 };
-  const focusTasks = [...dashboardTasks]
-    .sort((a, b) => {
-      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) return priorityOrder[a.priority] - priorityOrder[b.priority];
-      const aUrgency = a.due_date && a.due_date < today ? 0 : a.due_date === today ? 1 : a.due_date ? 2 : 3;
-      const bUrgency = b.due_date && b.due_date < today ? 0 : b.due_date === today ? 1 : b.due_date ? 2 : 3;
-      if (aUrgency !== bUrgency) return aUrgency - bUrgency;
-      return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31');
-    })
+  const comparePriorityTasks = (a: Task, b: Task) => {
+    if (priorityOrder[a.priority] !== priorityOrder[b.priority]) return priorityOrder[a.priority] - priorityOrder[b.priority];
+    const aUrgency = a.due_date && a.due_date < today ? 0 : a.due_date === today ? 1 : a.due_date ? 2 : 3;
+    const bUrgency = b.due_date && b.due_date < today ? 0 : b.due_date === today ? 1 : b.due_date ? 2 : 3;
+    if (aUrgency !== bUrgency) return aUrgency - bUrgency;
+    return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31');
+  };
+  const pinnedFocusTasks = openTasks
+    .filter(task => task.workflow_status === 'active' && task.is_today_priority)
+    .sort(comparePriorityTasks)
     .slice(0, 3);
+  const pinnedTaskIds = new Set(pinnedFocusTasks.map(task => task.id));
+  const automaticFocusTasks = dashboardTasks
+    .filter(task => !pinnedTaskIds.has(task.id))
+    .sort(comparePriorityTasks)
+    .slice(0, Math.max(0, 3 - pinnedFocusTasks.length));
+  const focusTasks = [...pinnedFocusTasks, ...automaticFocusTasks];
   const criticalTaskIds = new Set(focusTasks.map(task => task.id));
   const weekFocusTasks = [...dashboardTasks]
     .filter(task => !criticalTaskIds.has(task.id) && task.due_date && task.due_date <= weekEnd)
@@ -1519,7 +1637,7 @@ function OverviewDashboard({
           <button onClick={() => onEditTask(task)} className="min-w-0 flex-1 text-left">
             <span className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${waiting ? 'bg-violet-500/15 text-violet-200' : prominent ? 'bg-rose-500/20 text-rose-100' : 'bg-amber-500/15 text-amber-200'}`}>
-                {waiting ? 'In attesa' : prominent ? 'Critica' : task.priority === 'high' ? 'Alta' : 'Media'}
+                {waiting ? 'In attesa' : task.is_today_priority ? '📌 Fissata' : prominent ? 'Critica' : task.priority === 'high' ? 'Alta' : 'Media'}
               </span>
               <span className={`text-xs font-semibold ${isOverdue ? 'text-rose-300' : task.due_date === today ? 'text-sky-300' : 'text-slate-400'}`}>{taskDateLabel(task)}</span>
             </span>
@@ -1552,7 +1670,7 @@ function OverviewDashboard({
           <div>
             <p className="text-sm font-semibold capitalize text-blue-300">{dateLabel}</p>
             <h2 id="today-priorities" className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-5xl">Priorità di oggi</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">{firstNameGreeting}. Parti da queste tre azioni: sono quelle con maggior impatto e urgenza.</p>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">{firstNameGreeting}. Le attività fissate vengono prima; gli eventuali posti liberi sono completati automaticamente per priorità e urgenza.</p>
           </div>
           <div className="grid grid-cols-3 gap-2 text-center text-xs sm:min-w-[330px]">
             <div className="rounded-2xl border border-rose-500/25 bg-rose-500/10 px-3 py-3"><span className="block text-2xl font-bold text-rose-200">{focusTasks.length}</span><span className="text-rose-200/75">critiche</span></div>
@@ -2007,6 +2125,7 @@ export default function Home() {
       category: 'work',
       completed: false,
       workflow_status: 'active',
+      is_today_priority: false,
       remind_at: null,
       reminder_channel: 'telegram',
       reminder_status: 'pending',
@@ -2037,8 +2156,9 @@ export default function Home() {
     const task = tasks.find(t => t.id === taskId);
     if (task) {
       const nextCompleted = !task.completed;
-      setTasks(previous => previous.map(item => item.id === taskId ? { ...item, completed: nextCompleted } : item));
-      const updated = await updateTask(taskId, { completed: nextCompleted });
+      const optimisticTask = { ...task, completed: nextCompleted, is_today_priority: nextCompleted ? false : task.is_today_priority };
+      setTasks(previous => previous.map(item => item.id === taskId ? optimisticTask : item));
+      const updated = await updateTask(taskId, { completed: nextCompleted, ...(nextCompleted ? { is_today_priority: false } : {}) });
       if (updated) {
         setTasks(prev => prev.map(t => t.id === taskId ? updated : t));
         refreshSyncStatus();
@@ -2062,9 +2182,12 @@ export default function Home() {
     const currentTask = tasks.find(task => task.id === taskId);
     const projectChanged = currentTask && updates.project_id !== undefined && updates.project_id !== currentTask.project_id;
     const destinationTasks = projectChanged ? tasks.filter(task => task.project_id === updates.project_id && task.id !== taskId) : [];
-    const normalizedUpdates = projectChanged
-      ? { ...updates, sort_order: destinationTasks.length ? Math.max(...destinationTasks.map(task => task.sort_order)) + 1 : 0 }
+    const stateSafeUpdates = updates.completed === true || updates.workflow_status === 'waiting'
+      ? { ...updates, is_today_priority: false }
       : updates;
+    const normalizedUpdates = projectChanged
+      ? { ...stateSafeUpdates, sort_order: destinationTasks.length ? Math.max(...destinationTasks.map(task => task.sort_order)) + 1 : 0 }
+      : stateSafeUpdates;
     const updated = await updateTask(taskId, normalizedUpdates);
     if (updated) {
       setTasks(prev => prev.map(t => t.id === taskId ? updated : t));
@@ -2189,6 +2312,7 @@ export default function Home() {
   };
 
   const visibleTasks = tasks.filter(task => taskIsVisibleToViewer(task, viewerProfile));
+  const pinnedTodayTasks = tasks.filter(task => !task.completed && task.workflow_status === 'active' && task.is_today_priority);
 
   // Filter tasks
   const filteredTasks = visibleTasks.filter(task => {
@@ -2252,8 +2376,8 @@ export default function Home() {
                 Task & Projects • {backendMode === 'remote' ? 'Supabase' : 'Modalita locale'}
               </p>
             </div>
-            <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
-              <label className="col-span-3 flex items-center gap-2 rounded-xl border-2 border-slate-600 bg-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 sm:col-span-1">
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
+              <label className="col-span-2 flex items-center gap-2 rounded-xl border-2 border-slate-600 bg-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 sm:col-span-1">
                 <span className="hidden sm:inline">Vista di</span>
                 <select
                   value={viewerProfile}
@@ -2266,6 +2390,12 @@ export default function Home() {
                   <option value="ida">Ida · team</option>
                 </select>
               </label>
+              <Link
+                href="/quick-add"
+                className="rounded-xl border-2 border-emerald-500/40 bg-emerald-500/15 px-2 py-2 text-center text-sm font-semibold text-emerald-100 hover:bg-emerald-500/25 sm:px-4"
+              >
+                ⚡ Rapida
+              </Link>
               <button
                 onClick={() => setShowAddTask(true)}
                 className="bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 px-2 py-2 rounded-xl text-sm font-semibold sm:px-4"
@@ -2730,6 +2860,8 @@ export default function Home() {
         defaultProjectId={selectedProjectId}
         defaultAssignee={viewerLabels[viewerProfile]}
         assigneeOptions={allAssignees}
+        pinnedTasks={pinnedTodayTasks}
+        onUnpinTask={(taskId) => handleUpdateTask(taskId, { is_today_priority: false })}
       />
       
       <AddProjectModal
@@ -2766,6 +2898,8 @@ export default function Home() {
         onSave={handleUpdateTask}
         projects={projects}
         assigneeOptions={allAssignees}
+        pinnedTasks={pinnedTodayTasks}
+        onUnpinTask={(taskId) => handleUpdateTask(taskId, { is_today_priority: false })}
       />
     </main>
   );

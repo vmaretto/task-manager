@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   category TEXT DEFAULT 'work' CHECK (category IN ('work', 'admin', 'personal', 'travel')),
   completed BOOLEAN DEFAULT false,
   workflow_status TEXT NOT NULL DEFAULT 'active' CHECK (workflow_status IN ('active', 'waiting')),
+  is_today_priority BOOLEAN NOT NULL DEFAULT false,
   remind_at TIMESTAMP WITH TIME ZONE,
   reminder_channel TEXT DEFAULT 'telegram' CHECK (reminder_channel IN ('telegram', 'email')),
   reminder_status TEXT DEFAULT 'pending' CHECK (reminder_status IN ('pending', 'sent', 'skipped')),
@@ -37,10 +38,73 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS remind_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS workflow_status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_today_priority BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_channel TEXT DEFAULT 'telegram';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_status TEXT DEFAULT 'pending';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+
+UPDATE tasks
+SET is_today_priority = false
+WHERE is_today_priority
+  AND (completed OR workflow_status <> 'active');
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'tasks_today_priority_requires_active_check'
+      AND conrelid = 'tasks'::regclass
+  ) THEN
+    ALTER TABLE tasks
+      ADD CONSTRAINT tasks_today_priority_requires_active_check
+      CHECK (NOT is_today_priority OR (NOT completed AND workflow_status = 'active'));
+  END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION enforce_tasks_today_priority_rules()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  pin_is_new BOOLEAN;
+BEGIN
+  IF NEW.completed OR NEW.workflow_status <> 'active' THEN
+    NEW.is_today_priority := false;
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    pin_is_new := NEW.is_today_priority;
+  ELSE
+    pin_is_new := NEW.is_today_priority AND NOT OLD.is_today_priority;
+  END IF;
+
+  IF pin_is_new THEN
+    PERFORM pg_advisory_xact_lock(20260807, 1);
+    IF (
+      SELECT count(*) FROM tasks
+      WHERE is_today_priority
+        AND NOT completed
+        AND workflow_status = 'active'
+        AND id <> NEW.id
+    ) >= 3 THEN
+      RAISE EXCEPTION 'Sono gia fissate 3 priorita di oggi: rimuovine una prima di continuare.'
+        USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tasks_enforce_today_priority_rules ON tasks;
+CREATE TRIGGER tasks_enforce_today_priority_rules
+BEFORE INSERT OR UPDATE OF is_today_priority, completed, workflow_status
+ON tasks
+FOR EACH ROW
+EXECUTE FUNCTION enforce_tasks_today_priority_rules();
 
 -- Enable RLS
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;

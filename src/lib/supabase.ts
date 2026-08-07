@@ -13,6 +13,7 @@ export interface Task {
   category: 'work' | 'admin' | 'personal' | 'travel';
   completed: boolean;
   workflow_status: 'active' | 'waiting';
+  is_today_priority: boolean;
   remind_at: string | null;
   reminder_channel: 'telegram' | 'email';
   reminder_status: 'pending' | 'sent' | 'skipped';
@@ -134,6 +135,7 @@ function getDefaultTasks(): Task[] {
   const base = {
     category: 'work' as const,
     completed: false,
+    is_today_priority: false,
     remind_at: null,
     reminder_channel: 'telegram' as const,
     reminder_status: 'pending' as const,
@@ -370,7 +372,16 @@ function errorMessage(error: unknown) {
   return 'Sync fallita';
 }
 
+function isTodayPriorityLimitError(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? error.code : undefined;
+  const message = 'message' in error ? error.message : undefined;
+  return code === '23514' && typeof message === 'string' && message.includes('3 priorita di oggi');
+}
+
 function normalizeTask(task: Partial<Task>): Task {
+  const completed = task.completed ?? false;
+  const workflowStatus = task.workflow_status ?? 'active';
   return {
     id: task.id ?? '',
     text: task.text ?? '',
@@ -379,8 +390,9 @@ function normalizeTask(task: Partial<Task>): Task {
     priority: task.priority ?? 'medium',
     due_date: task.due_date ?? null,
     category: task.category ?? 'work',
-    completed: task.completed ?? false,
-    workflow_status: task.workflow_status ?? 'active',
+    completed,
+    workflow_status: workflowStatus,
+    is_today_priority: Boolean(task.is_today_priority) && !completed && workflowStatus === 'active',
     remind_at: task.remind_at ?? null,
     reminder_channel: task.reminder_channel ?? 'telegram',
     reminder_status: task.reminder_status ?? 'pending',
@@ -586,9 +598,17 @@ export async function getProjects(): Promise<Project[]> {
 
 export async function addTask(task: Omit<Task, 'id' | 'created_at'>): Promise<Task | null> {
   const mode = await detectBackendMode();
+  const normalizedTask = {
+    ...task,
+    is_today_priority: Boolean(task.is_today_priority) && !task.completed && task.workflow_status === 'active',
+  };
+  if (normalizedTask.is_today_priority) {
+    const occupiedSlots = readTasksLocal().filter(item => !item.completed && item.workflow_status === 'active' && item.is_today_priority).length;
+    if (occupiedSlots >= 3) return null;
+  }
 
   if (mode === 'local') {
-    const newTask: Task = normalizeTask({ ...task, id: makeId(), created_at: nowIso() });
+    const newTask: Task = normalizeTask({ ...normalizedTask, id: makeId(), created_at: nowIso() });
     replaceTaskLocal(newTask);
     queueOperation({ entity: 'task', type: 'upsert', id: newTask.id });
     return newTask;
@@ -597,7 +617,7 @@ export async function addTask(task: Omit<Task, 'id' | 'created_at'>): Promise<Ta
   try {
     const { data, error } = await supabase!
       .from('tasks')
-      .insert([task])
+      .insert([normalizedTask])
       .select()
       .single();
 
@@ -605,20 +625,30 @@ export async function addTask(task: Omit<Task, 'id' | 'created_at'>): Promise<Ta
     replaceTaskLocal(normalizeTask(data));
     return normalizeTask(data);
   } catch (error) {
+    if (isTodayPriorityLimitError(error)) return null;
     console.error('Error adding task, falling back to local mode:', error);
     setLocalMode();
-    return addTask(task);
+    return addTask(normalizedTask);
   }
 }
 
 export async function updateTask(id: string, updates: Partial<Task>): Promise<Task | null> {
   const mode = await detectBackendMode();
+  const current = readTasksLocal().find((task) => task.id === id);
+  const normalizedUpdates = current
+    ? { ...updates, is_today_priority: normalizeTask({ ...current, ...updates }).is_today_priority }
+    : ((updates.completed === true || updates.workflow_status === 'waiting')
+        ? { ...updates, is_today_priority: false }
+        : updates);
+  if (normalizedUpdates.is_today_priority && !current?.is_today_priority) {
+    const occupiedSlots = readTasksLocal().filter(task => task.id !== id && !task.completed && task.workflow_status === 'active' && task.is_today_priority).length;
+    if (occupiedSlots >= 3) return null;
+  }
 
   if (mode === 'local') {
-    const current = readTasksLocal().find((task) => task.id === id);
     if (!current) return null;
 
-    const updated = normalizeTask({ ...current, ...updates });
+    const updated = normalizeTask({ ...current, ...normalizedUpdates });
     replaceTaskLocal(updated);
     queueOperation({ entity: 'task', type: 'upsert', id });
     return updated;
@@ -627,7 +657,7 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<Ta
   try {
     const { data, error } = await supabase!
       .from('tasks')
-      .update(updates)
+      .update(normalizedUpdates)
       .eq('id', id)
       .select()
       .single();
@@ -636,9 +666,10 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<Ta
     replaceTaskLocal(normalizeTask(data));
     return normalizeTask(data);
   } catch (error) {
+    if (isTodayPriorityLimitError(error)) return null;
     console.error('Error updating task, falling back to local mode:', error);
     setLocalMode();
-    return updateTask(id, updates);
+    return updateTask(id, normalizedUpdates);
   }
 }
 

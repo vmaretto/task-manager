@@ -24,7 +24,16 @@ un elenco parallelo: leggono i normali task e li ordinano usando `completed`,
 
 - `workflow_status = active` alimenta le tre priorita critiche e le prossime azioni.
 - `workflow_status = waiting` sposta il task nella sezione **In attesa**.
+- `is_today_priority = true` fissa manualmente il task davanti alle priorita
+  calcolate. Sono ammessi al massimo tre task fissati, aperti e in azione.
 - Le azioni rapide completano il task, lo rimandano a domani o lo riattivano.
+
+Le tre card principali mostrano prima i task fissati manualmente e completano gli
+eventuali posti liberi con l'ordinamento automatico esistente (priorita, urgenza,
+data). Il form impedisce di fissare un quarto task e mostra quali fissaggi possono
+essere rimossi. Completare un task o spostarlo **In attesa** rimuove automaticamente
+il fissaggio. La stessa regola viene applicata alla copia locale/offline e dal
+database tramite trigger.
 
 Per un database Supabase esistente eseguire
 [`migration_today_priorities.sql`](./migration_today_priorities.sql) nel SQL editor.
@@ -36,6 +45,40 @@ come completati. In modalita esclusivamente locale il seed viene unito una sola 
 dati del browser, confrontando nome progetto e testo task: i record gia presenti
 non vengono sovrascritti ne riaperti. Con Supabase configurato, l'inizializzazione
 resta affidata esclusivamente alla migrazione SQL.
+
+Per abilitare il fissaggio manuale su un database esistente, dopo la migrazione
+della dashboard eseguire anche
+[`migration_manual_today_priorities.sql`](./migration_manual_today_priorities.sql).
+La migrazione e idempotente: aggiunge `tasks.is_today_priority`, ripulisce stati
+incompatibili, conserva al massimo tre eventuali fissaggi gia presenti e installa
+le regole database senza creare o riaprire task. **Non distribuire il codice che
+scrive il nuovo campo prima di avere applicato questa migrazione.**
+
+## Aggiunta rapida e tasto Azione iPhone
+
+La pagina mobile-first e disponibile alla route stabile:
+
+```text
+https://task-manager-dusky-chi-88.vercel.app/quick-add
+```
+
+Usa le stesse funzioni di lettura, scrittura e coda offline della dashboard. La
+modalita **Task normale** crea un task medio; **Priorita di oggi** crea un task ad
+alta priorita e lo fissa. Se i tre posti sono occupati, la pagina richiede di
+rimuovere esplicitamente uno dei fissaggi esistenti prima di continuare.
+
+Configurazione consigliata del tasto Azione:
+
+1. Aprire la route una volta in Safari ed effettuare il normale accesso, se
+   richiesto.
+2. In **Comandi Rapidi**, creare un comando con l'azione **Apri URL** e inserire
+   la route riportata sopra.
+3. Assegnare un nome al comando, per esempio “Aggiunta rapida task”.
+4. Aprire **Impostazioni → Tasto Azione → Comando rapido**, scegliere il comando
+   appena creato e verificare che il pulsante sotto l'azione sia configurato.
+
+Riferimenti Apple: [Aprire URL in Comandi Rapidi](https://support.apple.com/it-it/guide/shortcuts/apd621a1ad7a/ios)
+e [assegnare un comando rapido al tasto Azione](https://support.apple.com/it-it/guide/shortcuts/apdfea15680b/ios).
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
