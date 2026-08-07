@@ -1404,14 +1404,15 @@ function OverviewDashboard({
     .slice(0, 3);
   const criticalTaskIds = new Set(focusTasks.map(task => task.id));
   const weekFocusTasks = [...dashboardTasks]
-    .filter(task => !criticalTaskIds.has(task.id))
+    .filter(task => !criticalTaskIds.has(task.id) && task.due_date && task.due_date <= weekEnd)
     .sort((a, b) => {
       const aInWeek = a.due_date && a.due_date <= weekEnd ? 0 : 1;
       const bInWeek = b.due_date && b.due_date <= weekEnd ? 0 : 1;
       if (aInWeek !== bInWeek) return aInWeek - bInWeek;
       if (priorityOrder[a.priority] !== priorityOrder[b.priority]) return priorityOrder[a.priority] - priorityOrder[b.priority];
       return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31');
-    });
+    })
+    .slice(0, 8);
 
   const posterProjects: Array<Project & { synthetic?: boolean }> = [
     ...projects,

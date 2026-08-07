@@ -20,6 +20,17 @@ BEGIN
   END IF;
 END $$;
 
+-- Queste voci risultano gia chiuse nel contesto operativo verificato. Restano
+-- nello storico, ma non devono rientrare tra le attivita aperte della dashboard.
+UPDATE tasks
+SET completed = true
+WHERE NOT completed
+  AND (
+    (lower(text) LIKE '%crm%' AND lower(text) LIKE '%gal%')
+    OR (lower(text) LIKE '%gateway%' AND lower(text) LIKE '%switch%')
+    OR (lower(text) LIKE '%privacy%' AND lower(text) LIKE '%policy%')
+  );
+
 INSERT INTO projects (id, name, status, color, emoji, description, sort_order)
 SELECT seed.id, seed.name, 'active', seed.color, seed.emoji, seed.description, seed.sort_order
 FROM (VALUES

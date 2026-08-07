@@ -31,7 +31,8 @@ Per un database Supabase esistente eseguire
 La migrazione aggiunge lo stato operativo e inserisce le priorita iniziali in modo
 idempotente: se un task con lo stesso testo esiste gia, anche se completato, non
 viene creato ne riaperto. CRM/GAL, gateway SWITCH e privacy policy non fanno parte
-del seed. In modalita esclusivamente locale il seed viene unito una sola volta ai
+del seed; eventuali record storici corrispondenti vengono conservati ma marcati
+come completati. In modalita esclusivamente locale il seed viene unito una sola volta ai
 dati del browser, confrontando nome progetto e testo task: i record gia presenti
 non vengono sovrascritti ne riaperti. Con Supabase configurato, l'inizializzazione
 resta affidata esclusivamente alla migrazione SQL.
