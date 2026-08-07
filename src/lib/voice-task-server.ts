@@ -66,6 +66,18 @@ export function isAuthorizedAdmin(value: string | null) {
   return timingSafeEqual(actualDigest, expectedDigest);
 }
 
+/**
+ * Separate secret for the private ChatGPT plugin. It deliberately does not
+ * reuse a voice token or the Supabase service-role key.
+ */
+export function isAuthorizedTaskPortalMcp(value: string | null) {
+  const expected = process.env.MCP_TASK_PORTAL_TOKEN;
+  if (!value || !expected || expected.length < 24) return false;
+  const actualDigest = createHash('sha256').update(value, 'utf8').digest();
+  const expectedDigest = createHash('sha256').update(expected, 'utf8').digest();
+  return timingSafeEqual(actualDigest, expectedDigest);
+}
+
 export function isVoiceProfile(value: unknown): value is VoiceProfile {
   return typeof value === 'string' && voiceProfiles.includes(value as VoiceProfile);
 }
