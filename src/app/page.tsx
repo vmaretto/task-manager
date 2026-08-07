@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import CanvasView from './CanvasView';
 import { Task, Project, getTasks, getProjects, addTask, updateTask, updateTaskOrder, deleteTask, addProject, updateProject, updateProjectOrder, deleteProject, getBackendMode, getSyncStatus, syncPendingChanges } from '../lib/supabase';
+import { compareTodayPriorityUrgency } from '../lib/today-priority-ranking';
 
 // ============================================
 // COMPONENTS
@@ -1524,13 +1525,7 @@ function OverviewDashboard({
   const unassignedTasks = openTasks.filter(task => !task.project_id);
 
   const priorityOrder = { high: 0, medium: 1, low: 2 };
-  const comparePriorityTasks = (a: Task, b: Task) => {
-    if (priorityOrder[a.priority] !== priorityOrder[b.priority]) return priorityOrder[a.priority] - priorityOrder[b.priority];
-    const aUrgency = a.due_date && a.due_date < today ? 0 : a.due_date === today ? 1 : a.due_date ? 2 : 3;
-    const bUrgency = b.due_date && b.due_date < today ? 0 : b.due_date === today ? 1 : b.due_date ? 2 : 3;
-    if (aUrgency !== bUrgency) return aUrgency - bUrgency;
-    return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31');
-  };
+  const comparePriorityTasks = (a: Task, b: Task) => compareTodayPriorityUrgency(a, b, today);
   const pinnedFocusTasks = openTasks
     .filter(task => task.workflow_status === 'active' && task.is_today_priority)
     .sort(comparePriorityTasks)

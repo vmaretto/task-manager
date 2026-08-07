@@ -1,4 +1,5 @@
 export type VoicePriority = 'high' | 'medium' | 'low';
+export type VoicePinMode = 'none' | 'pin' | 'force';
 
 export interface VoiceProject {
   id: string;
@@ -12,9 +13,13 @@ export interface ParsedVoiceTask {
   projectId: string | null;
   projectName: string | null;
   assignee: string | null;
+  pinMode: VoicePinMode;
   needsReview: boolean;
   reviewReasons: string[];
 }
+
+const forcePinDirective = String.raw`\b(?:forza(?:lo|la)?\s+(?:(?:tra\s+le)|nelle)\s+priorit[aà]\s+di\s+oggi|forza(?:lo|la)?\s+priorit[aà]\s+di\s+oggi)\b`;
+const pinDirective = String.raw`\b(?:(?:fissa|metti)(?:lo|la)?\s+(?:(?:tra\s+le)|nelle)\s+priorit[aà]\s+di\s+oggi)\b`;
 
 const italianMonths: Record<string, number> = {
   gennaio: 1,
@@ -76,12 +81,14 @@ function cleanTitle(transcript: string, projectName: string | null) {
     .replace(/^\s*(?:devo|bisogna|occorre)\s+/i, '');
 
   title = title
+    .replace(new RegExp(forcePinDirective, 'gi'), ' ')
+    .replace(new RegExp(pinDirective, 'gi'), ' ')
     .replace(/\b(?:con\s+)?priorit[aà]\s+(?:alta|media|bassa)\b/gi, ' ')
     .replace(/\b(?:ad\s+)?alta\s+priorit[aà]\b/gi, ' ')
     .replace(/\b(?:urgente|prioritario|prioritaria)\b/gi, ' ')
-    .replace(/\b(?:entro|per)?\s*(?:oggi|domani|dopodomani)\b/gi, ' ')
-    .replace(/\b(?:entro|per)?\s*\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b/gi, ' ')
-    .replace(/\b(?:entro|per)?\s*\d{1,2}\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)(?:\s+\d{4})?\b/gi, ' ')
+    .replace(/\b(?:(?:scade|scadenza|entro|per)(?:\s+il)?\s+)?(?:oggi|domani|dopodomani)\b/gi, ' ')
+    .replace(/\b(?:(?:scade|scadenza|entro|per)(?:\s+il)?\s+)?\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b/gi, ' ')
+    .replace(/\b(?:(?:scade|scadenza|entro|per)(?:\s+il)?\s+)?\d{1,2}\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)(?:\s+\d{4})?\b/gi, ' ')
     .replace(/\b(?:assegna(?:to)?\s+a|responsabile(?:\s*[:è])?)\s+[^,;.]+/gi, ' ');
 
   if (projectName) {
@@ -111,6 +118,13 @@ export function parseVoiceTask(
 ): ParsedVoiceTask {
   const cleanTranscript = transcript.trim().replace(/\s+/g, ' ');
   const normalizedTranscript = normalize(cleanTranscript);
+  const forcePinRequested = new RegExp(forcePinDirective, 'i').test(normalizedTranscript);
+  const pinRequested = forcePinRequested || new RegExp(pinDirective, 'i').test(normalizedTranscript);
+  const pinMode: VoicePinMode = forcePinRequested ? 'force' : pinRequested ? 'pin' : 'none';
+  const transcriptWithoutPinDirective = cleanTranscript
+    .replace(new RegExp(forcePinDirective, 'gi'), ' ')
+    .replace(new RegExp(pinDirective, 'gi'), ' ');
+  const normalizedFieldTranscript = normalize(transcriptWithoutPinDirective);
   const today = parseReferenceDate(referenceDate);
   const reviewReasons: string[] = [];
 
@@ -123,16 +137,16 @@ export function parseVoiceTask(
   const priority = priorities.length === 1 ? priorities[0] : 'medium';
 
   const dateCandidates: string[] = [];
-  if (/\bdopodomani\b/.test(normalizedTranscript)) {
+  if (/\bdopodomani\b/.test(normalizedFieldTranscript)) {
     const date = new Date(today);
     date.setUTCDate(date.getUTCDate() + 2);
     dateCandidates.push(dateKey(date));
-  } else if (/\bdomani\b/.test(normalizedTranscript)) {
+  } else if (/\bdomani\b/.test(normalizedFieldTranscript)) {
     const date = new Date(today);
     date.setUTCDate(date.getUTCDate() + 1);
     dateCandidates.push(dateKey(date));
   }
-  if (/\boggi\b/.test(normalizedTranscript)) dateCandidates.push(dateKey(today));
+  if (/\boggi\b/.test(normalizedFieldTranscript)) dateCandidates.push(dateKey(today));
 
   for (const match of cleanTranscript.matchAll(/\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b/g)) {
     const day = Number(match[1]);
@@ -159,7 +173,7 @@ export function parseVoiceTask(
 
   const dates = unique(dateCandidates);
   if (dates.length > 1) reviewReasons.push('Sono state indicate più scadenze diverse.');
-  if (/\b(?:lunedi|martedi|mercoledi|giovedi|venerdi|sabato|domenica|settimana prossima)\b/.test(normalizedTranscript) && dates.length === 0) {
+  if (/\b(?:lunedi|martedi|mercoledi|giovedi|venerdi|sabato|domenica|settimana prossima)\b/.test(normalizedFieldTranscript) && dates.length === 0) {
     reviewReasons.push('La scadenza espressa a parole richiede conferma.');
   }
   const dueDate = dates.length === 1 ? dates[0] : null;
@@ -196,6 +210,7 @@ export function parseVoiceTask(
     projectId: project?.id ?? null,
     projectName: project?.name ?? null,
     assignee,
+    pinMode,
     needsReview: reviewReasons.length > 0,
     reviewReasons: unique(reviewReasons),
   };

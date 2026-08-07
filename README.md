@@ -148,7 +148,10 @@ Il codice locale non basta da solo. Prima di pubblicare:
 
 1. Eseguire [`migration_voice_tasks.sql`](./migration_voice_tasks.sql), quindi
    [`migration_voice_pairing_onboarding.sql`](./migration_voice_pairing_onboarding.sql)
-   nel SQL Editor del progetto Supabase. Entrambe sono idempotenti.
+   e [`migration_voice_today_priority_commands.sql`](./migration_voice_today_priority_commands.sql)
+   nel SQL Editor del progetto Supabase. Le migrazioni sono idempotenti. L'ultima
+   aggiunge la RPC server-only che crea il task e gestisce il pin in una singola
+   transazione; non applicarla in produzione prima dell'autorizzazione.
 2. Impostare in Vercel, solo come variabili server:
    - `SUPABASE_SERVICE_ROLE_KEY`: service role del progetto Supabase;
    - `VOICE_TASK_ADMIN_SECRET`: segreto casuale di almeno 24 caratteri, usato
@@ -185,27 +188,27 @@ Questi passaggi si eseguono **una sola volta** per iPhone.
    e premere **Abbina e mostra il mio token**. Premere **Copia token personale**.
    Non condividere il token: chi lo possiede puo creare task per quel profilo.
 2. Su iPhone aprire **Comandi Rapidi**, toccare **+**, rinominare il nuovo comando
-   `Task vocale` e toccare **Aggiungi azione**.
-3. Cercare e aggiungere **Detta testo** come prima azione. Espandere l'azione.
-   Se la versione di iOS mostra questi campi, impostare:
-   - **Lingua:** `Italiano`;
-   - **Interrompi ascolto:** `Dopo una pausa`.
-   Se i campi non compaiono, non aggiungere azioni sostitutive: Apple varia i
-   controlli visibili tra versioni e usa le impostazioni di Dettatura di sistema.
-   L'output richiesto nei passaggi successivi e la variabile **Testo dettato**.
+   `Task vocale` e toccare **Add Action** (Aggiungi azione).
+3. Cercare e aggiungere **Dictate Text** (Detta testo) come prima azione ed
+   espanderla. Impostare:
+   - **Language → Italian**;
+   - **Stop Listening → When Tapped**.
+   `When Tapped` evita che una breve pausa tronchi la frase: al termine della
+   dettatura l'utente tocca manualmente per continuare. Questa e una modifica da
+   fare **una sola volta nel Comando Rapido**, non nella web app. L'output usato
+   nei passaggi successivi e la variabile **Dictated Text**.
 4. Cercare e aggiungere **URL** come seconda azione. Nel campo URL incollare:
    `https://task-manager-dusky-chi-88.vercel.app/api/voice-tasks`.
-5. Aggiungere **Ottieni contenuti dell'URL** come terza azione. Toccare
-   **Mostra altro** e impostare:
-   - **Metodo:** `POST`;
-   - in **Intestazioni**, aggiungere la chiave `Authorization` e come valore
+5. Aggiungere **Get Contents of URL** come terza azione e impostare:
+   - **Method:** `POST`;
+   - in **Headers**, aggiungere la chiave `Authorization` e come valore
      `Bearer INCOLLA_QUI_IL_TOKEN_REALE`, sostituendo l'intero placeholder con
      il token copiato al punto 1; tra `Bearer` e il token deve restare uno spazio;
-   - in **Corpo richiesta**, scegliere `JSON`, aggiungere la chiave di testo
-     `transcript` e assegnarle la variabile magica **Testo dettato** del punto 3.
-6. Aggiungere **Ottieni valore dizionario**. Nel campo della chiave scrivere
-   `message`; come dizionario usare l'output **Contenuti dell'URL** del punto 5.
-7. Aggiungere **Mostra risultato** e selezionare come contenuto il valore
+   - in **Request Body**, scegliere `JSON`, aggiungere la chiave di testo
+     `transcript` e assegnarle la variabile magica **Dictated Text** del punto 3.
+6. Aggiungere **Get Dictionary Value**. Nel campo della chiave scrivere
+   `message`; come dizionario usare l'output **Contents of URL** del punto 5.
+7. Aggiungere **Show Result** e selezionare come contenuto il valore
    dizionario del punto 6. Avviare una prova: deve apparire una conferma leggibile.
 8. Aprire **Impostazioni → Tasto Azione**, scorrere fino a **Comando rapido**,
    toccare **Scegli un comando rapido** e selezionare `Task vocale`.
@@ -229,6 +232,22 @@ integrazione LLM nel progetto. Riconosce `oggi`, `domani`, `dopodomani`, date
 `responsabile` o `assegna a`. Non inventa campi mancanti. Conflitti, date non
 valide, progetti o responsabili sconosciuti producono `needs_review = true` e il
 badge **Da rivedere** nella dashboard.
+
+Esempi completi:
+
+- `Chiamare Giuseppe domani, priorità alta, progetto WISE, responsabile Marco`;
+- `Inviare la fattura, scade il 12 settembre, progetto GAL, fissalo tra le
+  priorità di oggi`: fissa soltanto se ci sono meno di 3 pin; se i posti sono
+  pieni crea comunque il task e chiede di liberarne uno;
+- `Inviare la fattura, forza priorità di oggi`: la keyword esplicita `forza`
+  autorizza la sostituzione del task fissato meno urgente. L'ordine e lo stesso
+  della dashboard (priorita, stato/data); a parita viene sostituito il piu
+  vecchio. La risposta indica sempre il titolo sostituito.
+
+La RPC serializza il conteggio e l'eventuale sostituzione con la stessa advisory
+lock usata dal trigger dei pin. Nessun task viene spostato senza la keyword
+`forza`; un conflitto transazionale restituisce una richiesta esplicita di
+riprovare.
 
 L'audit conserva una anteprima massima di 160 caratteri e il risultato strutturato,
 mai il token. Non viene esposto nella pagina pubblica di onboarding perche, senza

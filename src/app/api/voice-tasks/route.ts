@@ -1,10 +1,20 @@
 import { parseVoiceTask } from '@/lib/voice-task-parser';
 import { getBearerToken, getVoiceServerClient, hashVoiceToken, noStoreJson, romeDateKey } from '@/lib/voice-task-server';
+import { buildVoiceTaskMessage, type VoicePinResult } from '@/lib/today-priority-ranking';
 
 export const runtime = 'nodejs';
 
 const MAX_TRANSCRIPT_LENGTH = 2_000;
 const MAX_REQUESTS_PER_MINUTE = 12;
+
+type VoiceTaskRpcResult = {
+  task_id: string;
+  task_text: string;
+  is_today_priority: boolean;
+  pin_result: VoicePinResult;
+  replaced_task_id: string | null;
+  replaced_task_text: string | null;
+};
 
 function taskNotes(assignee: string | null, reviewReasons: string[]) {
   const notes: string[] = [];
@@ -68,27 +78,36 @@ export async function POST(request: Request) {
 
     const parsed = parseVoiceTask(transcript, projects ?? [], romeDateKey());
     const { data: task, error: taskError } = await supabase
-      .from('tasks')
-      .insert({
-        text: parsed.title,
-        notes: taskNotes(parsed.assignee, parsed.reviewReasons),
-        project_id: parsed.projectId,
-        priority: parsed.priority,
-        due_date: parsed.dueDate,
-        category: 'work',
-        completed: false,
-        workflow_status: 'active',
-        is_today_priority: false,
-        needs_review: parsed.needsReview,
-        source: 'voice',
+      .rpc('create_voice_task_with_priority_policy', {
+        p_text: parsed.title,
+        p_notes: taskNotes(parsed.assignee, parsed.reviewReasons),
+        p_project_id: parsed.projectId,
+        p_priority: parsed.priority,
+        p_due_date: parsed.dueDate,
+        p_needs_review: parsed.needsReview,
+        p_pin_mode: parsed.pinMode,
       })
-      .select('id, text')
       .single();
-    if (taskError || !task) return noStoreJson({ message: 'Non sono riuscito a creare il task.' }, { status: 503 });
+    if (taskError || !task) {
+      const conflict = taskError?.code === '40001' || taskError?.code === '23514';
+      return noStoreJson({
+        message: conflict
+          ? 'Le priorità di oggi sono cambiate mentre creavo il task. Riprova il comando.'
+          : 'Non sono riuscito a creare il task.',
+      }, { status: conflict ? 409 : 503 });
+    }
 
-    const message = parsed.needsReview
-      ? `Creato da rivedere: ${parsed.title}`
-      : `Task creato: ${parsed.title}`;
+    const createdTask = task as VoiceTaskRpcResult;
+    const pinResult = createdTask.pin_result;
+    if (!['not_requested', 'pinned', 'full', 'replaced'].includes(pinResult)) {
+      return noStoreJson({ message: 'Il task è stato creato, ma la conferma del fissaggio non è disponibile.' }, { status: 503 });
+    }
+    const message = buildVoiceTaskMessage({
+      title: parsed.title,
+      needsReview: parsed.needsReview,
+      pinResult,
+      replacedTaskText: createdTask.replaced_task_text,
+    });
 
     await Promise.all([
       supabase.from('voice_task_tokens').update({ last_used_at: new Date().toISOString() }).eq('id', tokenRecord.id),
@@ -102,10 +121,14 @@ export async function POST(request: Request) {
           due_date: parsed.dueDate,
           project: parsed.projectName,
           assignee: parsed.assignee,
+          pin_mode: parsed.pinMode,
+          pin_result: pinResult,
+          is_today_priority: createdTask.is_today_priority,
+          replaced_task: createdTask.replaced_task_text,
           needs_review: parsed.needsReview,
           review_reasons: parsed.reviewReasons,
         },
-        task_id: task.id,
+        task_id: createdTask.task_id,
         status: parsed.needsReview ? 'needs_review' : 'created',
         message,
       }),
@@ -115,12 +138,15 @@ export async function POST(request: Request) {
       message,
       needs_review: parsed.needsReview,
       task: {
-        id: task.id,
+        id: createdTask.task_id,
         title: parsed.title,
         priority: parsed.priority,
         due_date: parsed.dueDate,
         project: parsed.projectName,
         assignee: parsed.assignee,
+        is_today_priority: createdTask.is_today_priority,
+        pin_result: pinResult,
+        replaced_task: createdTask.replaced_task_text,
       },
     }, { status: 201 });
   } catch {
