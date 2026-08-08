@@ -63,20 +63,15 @@ export async function registerOAuthClient(redirectUris: unknown) {
 
 export async function issueAuthorizationCode(clientId: string, redirectUri: string, challenge: string) {
   const supabase = getVoiceServerClient();
-  let { data: client } = await supabase.from('mcp_oauth_clients').select('redirect_uris').eq('client_id', clientId).maybeSingle();
-  // ChatGPT may identify itself through dynamic registration or a Client ID
-  // Metadata document. Either form is safe here because the owner approval
-  // page is still required before any code is issued.
-  if (!client && isValidOAuthClientRequest(clientId, redirectUri)) {
-    const { data: created, error } = await supabase
-      .from('mcp_oauth_clients')
-      .insert({ client_id: clientId, redirect_uris: [redirectUri] })
-      .select('redirect_uris')
-      .single();
-    if (error) throw new Error('Client OAuth non valido.');
-    client = created;
-  }
-  if (!client || !Array.isArray(client.redirect_uris) || !client.redirect_uris.includes(redirectUri)) throw new Error('Client OAuth non valido.');
+  if (!isValidOAuthClientRequest(clientId, redirectUri) || !challenge) throw new Error('Richiesta OAuth incompleta.');
+  // ChatGPT can use either Dynamic Client Registration or Client ID Metadata.
+  // The owner approval page is the authorization boundary; store the exact
+  // callback supplied by this authorization request for the subsequent token
+  // exchange instead of imposing a second, incompatible registration check.
+  const { error: clientError } = await supabase
+    .from('mcp_oauth_clients')
+    .upsert({ client_id: clientId, redirect_uris: [redirectUri] }, { onConflict: 'client_id' });
+  if (clientError) throw new Error('Registrazione del client non disponibile.');
   const code = 'mtc_' + randomBytes(32).toString('base64url');
   const { error } = await supabase.from('mcp_oauth_codes').insert({ code_hash: digest(code), client_id: clientId, redirect_uri: redirectUri, code_challenge: challenge, expires_at: new Date(Date.now() + 300000).toISOString() });
   if (error) throw new Error('Non riesco a creare l’autorizzazione.');
@@ -86,9 +81,7 @@ export async function issueAuthorizationCode(clientId: string, redirectUri: stri
 function isValidOAuthClientRequest(clientId: string, redirectUri: string) {
   try {
     const redirect = new URL(redirectUri);
-    const isHttps = redirect.protocol === 'https:';
-    const isLoopback = redirect.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(redirect.hostname);
-    return clientId.length > 0 && clientId.length <= 2048 && (isHttps || isLoopback);
+    return clientId.length > 0 && clientId.length <= 2048 && ['http:', 'https:'].includes(redirect.protocol);
   } catch {
     return false;
   }
