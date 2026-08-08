@@ -63,12 +63,32 @@ export async function registerOAuthClient(redirectUris: unknown) {
 
 export async function issueAuthorizationCode(clientId: string, redirectUri: string, challenge: string) {
   const supabase = getVoiceServerClient();
-  const { data: client } = await supabase.from('mcp_oauth_clients').select('redirect_uris').eq('client_id', clientId).maybeSingle();
+  let { data: client } = await supabase.from('mcp_oauth_clients').select('redirect_uris').eq('client_id', clientId).maybeSingle();
+  if (!client && isChatGptClient(clientId, redirectUri)) {
+    const { data: created, error } = await supabase
+      .from('mcp_oauth_clients')
+      .insert({ client_id: clientId, redirect_uris: [redirectUri] })
+      .select('redirect_uris')
+      .single();
+    if (error) throw new Error('Client OAuth non valido.');
+    client = created;
+  }
   if (!client || !Array.isArray(client.redirect_uris) || !client.redirect_uris.includes(redirectUri)) throw new Error('Client OAuth non valido.');
   const code = 'mtc_' + randomBytes(32).toString('base64url');
   const { error } = await supabase.from('mcp_oauth_codes').insert({ code_hash: digest(code), client_id: clientId, redirect_uri: redirectUri, code_challenge: challenge, expires_at: new Date(Date.now() + 300000).toISOString() });
   if (error) throw new Error('Non riesco a creare l’autorizzazione.');
   return code;
+}
+
+function isChatGptClient(clientId: string, redirectUri: string) {
+  try {
+    const client = new URL(clientId);
+    const redirect = new URL(redirectUri);
+    const allowed = new Set(['chatgpt.com', 'chat.openai.com']);
+    return client.protocol === 'https:' && redirect.protocol === 'https:' && allowed.has(client.hostname) && allowed.has(redirect.hostname);
+  } catch {
+    return false;
+  }
 }
 
 export async function exchangeAuthorizationCode(code: string, clientId: string, redirectUri: string, verifier: string) {
