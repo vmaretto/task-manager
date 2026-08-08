@@ -86,7 +86,9 @@ export async function issueAuthorizationCode(clientId: string, redirectUri: stri
 function isValidOAuthClientRequest(clientId: string, redirectUri: string) {
   try {
     const redirect = new URL(redirectUri);
-    return clientId.length > 0 && clientId.length <= 2048 && redirect.protocol === 'https:';
+    const isHttps = redirect.protocol === 'https:';
+    const isLoopback = redirect.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(redirect.hostname);
+    return clientId.length > 0 && clientId.length <= 2048 && (isHttps || isLoopback);
   } catch {
     return false;
   }
