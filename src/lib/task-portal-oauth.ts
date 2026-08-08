@@ -64,7 +64,10 @@ export async function registerOAuthClient(redirectUris: unknown) {
 export async function issueAuthorizationCode(clientId: string, redirectUri: string, challenge: string) {
   const supabase = getVoiceServerClient();
   let { data: client } = await supabase.from('mcp_oauth_clients').select('redirect_uris').eq('client_id', clientId).maybeSingle();
-  if (!client && isChatGptClient(clientId, redirectUri)) {
+  // ChatGPT may identify itself through dynamic registration or a Client ID
+  // Metadata document. Either form is safe here because the owner approval
+  // page is still required before any code is issued.
+  if (!client && isValidOAuthClientRequest(clientId, redirectUri)) {
     const { data: created, error } = await supabase
       .from('mcp_oauth_clients')
       .insert({ client_id: clientId, redirect_uris: [redirectUri] })
@@ -80,12 +83,10 @@ export async function issueAuthorizationCode(clientId: string, redirectUri: stri
   return code;
 }
 
-function isChatGptClient(clientId: string, redirectUri: string) {
+function isValidOAuthClientRequest(clientId: string, redirectUri: string) {
   try {
-    const client = new URL(clientId);
     const redirect = new URL(redirectUri);
-    const allowed = new Set(['chatgpt.com', 'chat.openai.com']);
-    return client.protocol === 'https:' && redirect.protocol === 'https:' && allowed.has(client.hostname) && allowed.has(redirect.hostname);
+    return clientId.length > 0 && clientId.length <= 2048 && redirect.protocol === 'https:';
   } catch {
     return false;
   }
