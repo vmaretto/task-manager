@@ -35,6 +35,39 @@ essere rimossi. Completare un task o spostarlo **In attesa** rimuove automaticam
 il fissaggio. La stessa regola viene applicata alla copia locale/offline e dal
 database tramite trigger.
 
+La Home usa il modello **Area → Progetto/filone → Task** e mantiene il riepilogo
+mattutino compatto: **Oggi/Urgente**, **Questa settimana**, **In attesa** e
+**Da non perdere di vista**. Le macro-aree canoniche sono Professionista, pOsti,
+Food Innovation Broker e Personale. La vista **Inbox** raccoglie i task senza
+progetto e permette di classificarli in un secondo momento.
+
+Per allineare un database esistente eseguire
+[`migration_operating_model.sql`](./migration_operating_model.sql). La migrazione
+e idempotente, aggiunge i campi della gerarchia se mancanti e crea o promuove le
+quattro macro-aree senza cambiare gli ID gia referenziati.
+
+## Integrazione ChatGPT / Task Portal
+
+L'endpoint MCP e `/api/mcp` e usa OAuth. Il server espone quattro azioni:
+
+- `list_projects`: legge aree, progetti e relazioni gerarchiche;
+- `list_tasks`: legge task aperti/completati, anche per progetto o stato;
+- `create_task`: crea task con priorita, scadenza, responsabile e note;
+- `update_task`: aggiorna gli stessi campi, completa/riapre, sposta in attesa o
+  in Inbox e gestisce il fissaggio tra le priorita di oggi.
+
+`list_projects` include una lettura di compatibilita per installazioni che non
+hanno ancora applicato la migrazione delle aree. Se restituisce
+`hierarchy_available: false`, applicare `migration_operating_model.sql` prima di
+usare la gerarchia. In produzione servono `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` (dashboard), `SUPABASE_SERVICE_ROLE_KEY`,
+`MCP_OAUTH_SIGNING_SECRET` e `MCP_OAUTH_APPROVAL_SECRET`; le due chiavi Supabase
+pubbliche devono appartenere allo stesso progetto usato dalla service role.
+
+Se il progetto Supabase viene sostituito con un database vuoto, la prima
+sincronizzazione carica l'intero workspace conservato nel browser (prima aree,
+poi progetti, poi task) invece di sovrascrivere la sola copia offline.
+
 Per un database Supabase esistente eseguire
 [`migration_today_priorities.sql`](./migration_today_priorities.sql) nel SQL editor.
 La migrazione aggiunge lo stato operativo e inserisce le priorita iniziali in modo

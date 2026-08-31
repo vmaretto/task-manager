@@ -66,7 +66,18 @@ const SYNC_QUEUE_KEY = 'switchboard.sync-queue';
 const SYNC_META_KEY = 'switchboard.sync-meta';
 const TODAY_PRIORITIES_SEED_KEY = 'switchboard.today-priorities-seed-v1';
 
+const defaultAreaIds = {
+  professional: 'cccccccc-0000-4000-8000-000000000001',
+  posti: 'cccccccc-0000-4000-8000-000000000002',
+  fib: 'cccccccc-0000-4000-8000-000000000003',
+  personal: 'cccccccc-0000-4000-8000-000000000004',
+};
+
 const defaultProjects: Project[] = [
+  { id: defaultAreaIds.professional, name: 'Professionista', status: 'active', color: '#8b5cf6', emoji: '👤', description: 'Incarichi, docenze e consulenze personali', parent_project_id: null, is_area: true, sort_order: 0 },
+  { id: defaultAreaIds.posti, name: 'pOsti', status: 'active', color: '#2563eb', emoji: '⛓️', description: 'Piattaforma, progetti e clienti pOsti', parent_project_id: null, is_area: true, sort_order: 1 },
+  { id: defaultAreaIds.fib, name: 'Food Innovation Broker', status: 'active', color: '#ef4444', emoji: '📊', description: 'Sviluppo e iniziative Food Innovation Broker', parent_project_id: null, is_area: true, sort_order: 2 },
+  { id: defaultAreaIds.personal, name: 'Personale', status: 'active', color: '#10b981', emoji: '🌱', description: 'Casa, salute, famiglia e attività personali', parent_project_id: null, is_area: true, sort_order: 3 },
   {
     id: '11111111-1111-1111-1111-111111111111',
     name: 'Master Carbon Farming',
@@ -74,7 +85,7 @@ const defaultProjects: Project[] = [
     color: '#10b981',
     emoji: '🌱',
     description: 'Direttore Operativo - Universita della Tuscia',
-    parent_project_id: null,
+    parent_project_id: defaultAreaIds.professional,
     is_area: false,
     sort_order: 0,
   },
@@ -85,7 +96,7 @@ const defaultProjects: Project[] = [
     color: '#3b82f6',
     emoji: '🇪🇺',
     description: 'Horizon Europe - Food Hub',
-    parent_project_id: null,
+    parent_project_id: defaultAreaIds.posti,
     is_area: false,
     sort_order: 1,
   },
@@ -96,7 +107,7 @@ const defaultProjects: Project[] = [
     color: '#f43f5e',
     emoji: '🍎',
     description: 'Progetto EU LIFE - App riconoscimento cibo',
-    parent_project_id: null,
+    parent_project_id: defaultAreaIds.posti,
     is_area: false,
     sort_order: 2,
   },
@@ -107,19 +118,19 @@ const defaultProjects: Project[] = [
     color: '#a855f7',
     emoji: '🏡',
     description: 'Valorizzazione territoriale Comune di Tolfa',
-    parent_project_id: null,
+    parent_project_id: defaultAreaIds.posti,
     is_area: false,
     sort_order: 3,
   },
-  { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Coach', status: 'active', color: '#f97316', emoji: '🤝', description: 'Sessioni di coaching', parent_project_id: null, is_area: false, sort_order: 4 },
-  { id: 'aaaaaaaa-0000-4000-8000-000000000002', name: 'FIB', status: 'active', color: '#ef4444', emoji: '🏦', description: 'Amministrazione FIB', parent_project_id: null, is_area: false, sort_order: 5 },
-  { id: 'aaaaaaaa-0000-4000-8000-000000000003', name: 'GAL', status: 'active', color: '#22c55e', emoji: '🧾', description: 'Fatturazione GAL', parent_project_id: null, is_area: false, sort_order: 6 },
-  { id: 'aaaaaaaa-0000-4000-8000-000000000004', name: 'WISE', status: 'active', color: '#06b6d4', emoji: '🔗', description: 'Integrazione dati e interfacce', parent_project_id: null, is_area: false, sort_order: 7 },
-  { id: '88888888-8888-8888-8888-888888888888', name: 'Birra Peroni / BEST', status: 'active', color: '#eab308', emoji: '🍺', description: 'Manutenzione ed evoluzione BEST', parent_project_id: null, is_area: false, sort_order: 8 },
-  { id: 'aaaaaaaa-0000-4000-8000-000000000005', name: 'Nastro Azzurro', status: 'active', color: '#3b82f6', emoji: '🔵', description: 'Coordinamento Nastro Azzurro', parent_project_id: null, is_area: false, sort_order: 9 },
-  { id: 'aaaaaaaa-0000-4000-8000-000000000006', name: 'Scanner', status: 'active', color: '#64748b', emoji: '📦', description: 'Logistica scanner', parent_project_id: null, is_area: false, sort_order: 10 },
-  { id: 'aaaaaaaa-0000-4000-8000-000000000007', name: 'EFL', status: 'active', color: '#8b5cf6', emoji: '📊', description: 'Indicatori e caricamenti', parent_project_id: null, is_area: false, sort_order: 11 },
-  { id: 'aaaaaaaa-0000-4000-8000-000000000008', name: 'VFF', status: 'active', color: '#ec4899', emoji: '📅', description: 'Coordinamento Value for Food', parent_project_id: null, is_area: false, sort_order: 12 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Coach', status: 'active', color: '#f97316', emoji: '🤝', description: 'Sessioni di coaching', parent_project_id: defaultAreaIds.professional, is_area: false, sort_order: 1 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000002', name: 'Amministrazione FIB', status: 'active', color: '#ef4444', emoji: '🏦', description: 'Amministrazione FIB', parent_project_id: defaultAreaIds.fib, is_area: false, sort_order: 0 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000003', name: 'GAL', status: 'active', color: '#22c55e', emoji: '🧾', description: 'Fatturazione GAL', parent_project_id: defaultAreaIds.posti, is_area: false, sort_order: 4 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000004', name: 'WISE', status: 'active', color: '#06b6d4', emoji: '🔗', description: 'Integrazione dati e interfacce', parent_project_id: defaultAreaIds.posti, is_area: false, sort_order: 5 },
+  { id: '88888888-8888-8888-8888-888888888888', name: 'Birra Peroni / BEST', status: 'active', color: '#eab308', emoji: '🍺', description: 'Manutenzione ed evoluzione BEST', parent_project_id: defaultAreaIds.posti, is_area: false, sort_order: 6 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000005', name: 'Nastro Azzurro', status: 'active', color: '#3b82f6', emoji: '🔵', description: 'Coordinamento Nastro Azzurro', parent_project_id: defaultAreaIds.posti, is_area: false, sort_order: 7 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000006', name: 'Scanner', status: 'active', color: '#64748b', emoji: '📦', description: 'Logistica scanner', parent_project_id: defaultAreaIds.posti, is_area: false, sort_order: 8 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000007', name: 'EFL', status: 'active', color: '#8b5cf6', emoji: '📊', description: 'Indicatori e caricamenti', parent_project_id: defaultAreaIds.posti, is_area: false, sort_order: 9 },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000008', name: 'VFF', status: 'active', color: '#ec4899', emoji: '📅', description: 'Coordinamento Value for Food', parent_project_id: defaultAreaIds.posti, is_area: false, sort_order: 10 },
 ];
 
 function localDateKeyWithOffset(days: number) {
@@ -474,14 +485,48 @@ export async function syncPendingChanges(): Promise<boolean> {
       return false;
     }
 
-    const queue = readQueue();
-    if (queue.length === 0) {
-      setRemoteMode();
-      setSyncMeta({ lastSyncError: null, lastSyncAt: nowIso() });
-      return true;
-    }
-
     try {
+      const queue = readQueue();
+      const localTasks = readTasksLocal();
+      const localProjects = readProjectsLocal();
+      const [remoteTaskProbe, remoteProjectProbe] = await Promise.all([
+        supabase.from('tasks').select('id').limit(1),
+        supabase.from('projects').select('id').limit(1),
+      ]);
+      if (remoteTaskProbe.error) throw remoteTaskProbe.error;
+      if (remoteProjectProbe.error) throw remoteProjectProbe.error;
+      const remoteIsEmpty = (remoteTaskProbe.data ?? []).length === 0 && (remoteProjectProbe.data ?? []).length === 0;
+
+      // A restored or replaced Supabase project may be empty while the browser
+      // still contains the complete offline workspace. Upload that workspace
+      // before any remote read can overwrite the only remaining copy.
+      if (
+        remoteIsEmpty &&
+        (localTasks.length > 0 || localProjects.length > 0)
+      ) {
+        const localAreas = localProjects.filter(project => project.is_area);
+        const localProjectRows = localProjects.filter(project => !project.is_area);
+        for (const rows of [localAreas, localProjectRows]) {
+          if (rows.length === 0) continue;
+          const { error } = await supabase.from('projects').upsert(rows, { onConflict: 'id' });
+          if (error) throw error;
+        }
+        if (localTasks.length > 0) {
+          const { error } = await supabase.from('tasks').upsert(localTasks, { onConflict: 'id' });
+          if (error) throw error;
+        }
+        writeQueue([]);
+        setRemoteMode();
+        setSyncMeta({ lastSyncError: null, lastSyncAt: nowIso() });
+        return true;
+      }
+
+      if (queue.length === 0) {
+        setRemoteMode();
+        setSyncMeta({ lastSyncError: null, lastSyncAt: nowIso() });
+        return true;
+      }
+
       const taskUpsertIds = new Set<string>();
       const taskDeleteIds = new Set<string>();
       const projectUpsertIds = new Set<string>();
@@ -503,8 +548,8 @@ export async function syncPendingChanges(): Promise<boolean> {
         }
       }
 
-      let tasks = readTasksLocal();
-      let projects = readProjectsLocal();
+      let tasks = localTasks;
+      let projects = localProjects;
 
       // Repair queues created by older versions: detach every reference before
       // deleting a project, regardless of the database constraint configuration.

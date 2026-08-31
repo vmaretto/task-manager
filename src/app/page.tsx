@@ -842,7 +842,7 @@ function EditTaskModal({
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
             >
               <option value="">Nessun progetto</option>
-              {projects.map(p => (
+              {projects.filter(p => !p.is_area).map(p => (
                 <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
               ))}
             </select>
@@ -1102,7 +1102,7 @@ function AddTaskModal({
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
             >
               <option value="">Nessun progetto</option>
-              {projects.map(p => (
+              {projects.filter(p => !p.is_area).map(p => (
                 <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
               ))}
             </select>
@@ -1498,7 +1498,6 @@ function OverviewDashboard({
   onToggleTask,
   onEditTask,
   onUpdateTask,
-  onDeleteTask,
   onOpenTasks,
   onOpenProjects,
 }: {
@@ -1507,7 +1506,6 @@ function OverviewDashboard({
   onToggleTask: (taskId: string) => void | Promise<void>;
   onEditTask: (task: Task) => void;
   onUpdateTask: (taskId: string, updates: Partial<Task>) => void | Promise<void>;
-  onDeleteTask: (taskId: string) => void | Promise<void>;
   onOpenTasks: (timeFilter: TimeFilter, projectId?: string | null) => void;
   onOpenProjects: () => void;
 }) {
@@ -1547,65 +1545,48 @@ function OverviewDashboard({
       return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31');
     })
     .slice(0, 8);
-
-  const posterProjects: Array<Project & { synthetic?: boolean }> = [
-    ...projects,
-    {
-      id: '__none__',
-      name: 'Area generale',
-      status: 'active',
-      color: '#94a3b8',
-      emoji: '🧭',
-      description: 'Attività non ancora assegnate a un progetto',
-      parent_project_id: null,
-      is_area: true,
-      sort_order: 0,
-      synthetic: true,
-    },
-  ];
-
-  const projectOverview = posterProjects
-    .map(project => {
-      const parent = project.parent_project_id ? projects.find(candidate => candidate.id === project.parent_project_id) : undefined;
-      const projectTasks = tasks.filter(task => project.synthetic ? !task.project_id : task.project_id === project.id);
-      const open = projectTasks.filter(task => !task.completed);
-      const visibleOpen = open.filter(task => task.priority !== 'low');
-      const overdue = open.filter(task => task.due_date && task.due_date < today).length;
-      const high = open.filter(task => task.priority === 'high').length;
-      const completed = projectTasks.filter(task => task.completed).length;
-      const progress = projectTasks.length ? Math.round((completed / projectTasks.length) * 100) : 0;
-      const nextAction = [...visibleOpen].sort((a, b) => {
-        if (priorityOrder[a.priority] !== priorityOrder[b.priority]) return priorityOrder[a.priority] - priorityOrder[b.priority];
-        const aUrgency = a.due_date && a.due_date < today ? 0 : a.due_date === today ? 1 : a.due_date ? 2 : 3;
-        const bUrgency = b.due_date && b.due_date < today ? 0 : b.due_date === today ? 1 : b.due_date ? 2 : 3;
-        if (aUrgency !== bUrgency) return aUrgency - bUrgency;
-        return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31');
-      })[0];
-      const reminder = [...visibleOpen]
-        .filter(task => task.remind_at && task.reminder_status === 'pending')
-        .sort((a, b) => (a.remind_at ?? '').localeCompare(b.remind_at ?? ''))[0];
-      const health = project.status === 'done'
-        ? { label: 'Chiuso', dot: 'bg-emerald-400', tone: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' }
-        : overdue > 0 || high >= 3
-          ? { label: 'Critico', dot: 'bg-rose-400', tone: 'border-rose-500/40 bg-rose-500/10 text-rose-200' }
-          : high > 0 || (reminder?.remind_at && new Date(reminder.remind_at) < new Date())
-            ? { label: 'Attenzione', dot: 'bg-amber-400', tone: 'border-amber-500/35 bg-amber-500/10 text-amber-200' }
-            : open.length === 0
-              ? { label: 'In attesa', dot: 'bg-slate-400', tone: 'border-slate-600 bg-slate-700/30 text-slate-300' }
-              : { label: 'In ordine', dot: 'bg-sky-400', tone: 'border-sky-500/30 bg-sky-500/10 text-sky-200' };
-      return { project, parent, open: open.length, overdue, high, progress, nextAction, reminder, health };
-    })
+  const scheduledTaskIds = new Set([...focusTasks, ...weekFocusTasks].map(task => task.id));
+  const watchTasks = [...dashboardTasks]
+    .filter(task => !scheduledTaskIds.has(task.id) && (
+      (task.remind_at && task.reminder_status === 'pending') || !task.due_date || task.due_date > weekEnd
+    ))
     .sort((a, b) => {
-      const statusOrder = { active: 0, backlog: 1, done: 2 };
-      const statusDifference = statusOrder[a.project.status] - statusOrder[b.project.status];
-      if (statusDifference !== 0) return statusDifference;
-      return (b.overdue * 4 + b.high * 2 + b.open) - (a.overdue * 4 + a.high * 2 + a.open);
-    });
+      const reminderDifference = (a.remind_at ?? '9999').localeCompare(b.remind_at ?? '9999');
+      if (reminderDifference !== 0) return reminderDifference;
+      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) return priorityOrder[a.priority] - priorityOrder[b.priority];
+      return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31');
+    })
+    .slice(0, 6);
 
-  const importantReminders = [...dashboardTasks]
-    .filter(task => task.remind_at && task.reminder_status === 'pending')
-    .sort((a, b) => (a.remind_at ?? '').localeCompare(b.remind_at ?? ''))
-    .slice(0, 5);
+  const areaRank = (name: string) => {
+    const normalized = normalizePersonName(name);
+    if (normalized === 'professionista') return 0;
+    if (normalized === 'posti') return 1;
+    if (normalized === 'fib' || normalized === 'food innovation broker') return 2;
+    if (normalized === 'personale') return 3;
+    return 10;
+  };
+  const areaDisplayName = (name: string) => {
+    const normalized = normalizePersonName(name);
+    if (normalized === 'posti') return 'pOsti';
+    if (normalized === 'fib') return 'Food Innovation Broker';
+    return name;
+  };
+  const areaOverview = projects
+    .filter(project => project.is_area)
+    .sort((a, b) => areaRank(a.name) - areaRank(b.name) || a.sort_order - b.sort_order || a.name.localeCompare(b.name, 'it'))
+    .map(area => {
+      const childProjects = projects.filter(project => !project.is_area && project.parent_project_id === area.id);
+      const projectIds = new Set([area.id, ...childProjects.map(project => project.id)]);
+      const areaTasks = tasks.filter(task => task.project_id && projectIds.has(task.project_id));
+      const open = areaTasks.filter(task => !task.completed);
+      const overdue = open.filter(task => task.due_date && task.due_date < today).length;
+      const waiting = open.filter(task => task.workflow_status === 'waiting').length;
+      const nextAction = [...open]
+        .filter(task => task.workflow_status === 'active')
+        .sort(comparePriorityTasks)[0];
+      return { area, childProjects, open, overdue, waiting, nextAction };
+    });
 
   const dateLabel = new Intl.DateTimeFormat('it-IT', {
     weekday: 'long',
@@ -1686,7 +1667,7 @@ function OverviewDashboard({
         <div className="flex flex-col gap-5 border-b border-slate-700/80 pb-6 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-sm font-semibold capitalize text-blue-300">{dateLabel}</p>
-            <h2 id="today-priorities" className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-5xl">Priorità di oggi</h2>
+            <h2 id="today-priorities" className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-5xl">Oggi / Urgente</h2>
             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">{firstNameGreeting}. Le attività fissate vengono prima; gli eventuali posti liberi sono completati automaticamente per priorità e urgenza.</p>
           </div>
           <div className="grid grid-cols-3 gap-2 text-center text-xs sm:min-w-[330px]">
@@ -1729,99 +1710,52 @@ function OverviewDashboard({
         </section>
       </div>
 
-      <section aria-labelledby="project-map" className="overflow-hidden rounded-3xl border border-slate-700/80 bg-gradient-to-br from-slate-800 via-slate-900 to-blue-950/60 p-4 shadow-2xl shadow-slate-950/30 sm:p-6">
+      <section aria-labelledby="area-map" className="overflow-hidden rounded-3xl border border-slate-700/80 bg-gradient-to-br from-slate-800 via-slate-900 to-blue-950/60 p-4 shadow-2xl shadow-slate-950/30 sm:p-6">
         <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="mb-2 text-sm font-semibold capitalize text-blue-300">{dateLabel}</p>
-            <h2 id="project-map" className="text-3xl font-bold tracking-tight text-white sm:text-4xl">La tua mappa dei progetti</h2>
-            <p className="mt-2 max-w-3xl text-slate-300">{firstNameGreeting}. Ogni riquadro mostra cosa richiede attenzione e la prossima azione concreta.</p>
+            <p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-blue-300">Centro operativo</p>
+            <h2 id="area-map" className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Le quattro aree</h2>
+            <p className="mt-2 max-w-3xl text-slate-300">Un colpo d’occhio sui mondi di lavoro e personali, senza scorrere tutti i progetti.</p>
           </div>
           <div className="flex flex-wrap gap-2 text-xs font-semibold">
-            <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-rose-200">● {projectOverview.filter(item => item.health.label === 'Critico').length} critici</span>
-            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-amber-200">● {projectOverview.filter(item => item.health.label === 'Attenzione').length} da seguire</span>
-            <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-blue-200">{projects.filter(project => project.is_area).length} aree · {projects.filter(project => !project.is_area).length} progetti</span>
+            <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-blue-200">{areaOverview.length} aree · {projects.filter(project => !project.is_area).length} progetti</span>
             <button onClick={onOpenProjects} className="rounded-full border border-slate-600 bg-slate-800 px-3 py-1.5 text-slate-200 hover:border-slate-400">Gestisci aree →</button>
           </div>
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {projectOverview.map(({ project, parent, open, overdue, high, progress, nextAction, reminder, health }) => (
+          {areaOverview.map(({ area, childProjects, open, overdue, waiting, nextAction }) => (
             <article
-              key={project.id}
-              className="group relative flex min-h-[240px] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/55 p-4 transition hover:-translate-y-0.5 hover:border-slate-500 hover:bg-slate-900/80"
-              style={{ borderTopColor: project.color, borderTopWidth: '3px' }}
+              key={area.id}
+              className="group relative flex min-h-[215px] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/55 p-4 transition hover:-translate-y-0.5 hover:border-slate-500 hover:bg-slate-900/80"
+              style={{ borderTopColor: area.color, borderTopWidth: '3px' }}
             >
               <div className="flex items-start justify-between gap-3">
-                <button onClick={() => onOpenTasks('all', project.synthetic ? null : project.id)} className="min-w-0 text-left">
-                  <span className="block truncate text-lg font-bold text-white">{project.emoji} {project.name}</span>
-                  {parent && <span className="mt-1 inline-flex rounded-md border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-200">↳ dentro {parent.emoji} {parent.name}</span>}
-                  <span className="mt-1 block truncate text-xs text-slate-400">{project.description || 'Nessuna descrizione'}</span>
+                <button onClick={onOpenProjects} className="min-w-0 text-left">
+                  <span className="block text-lg font-bold text-white">{area.emoji} {areaDisplayName(area.name)}</span>
+                  <span className="mt-1 block text-xs text-slate-400">{childProjects.length} progetti/filoni</span>
                 </button>
-                <span className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${health.tone}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${health.dot}`} />{health.label}
-                </span>
+                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${overdue > 0 ? 'border-rose-500/35 bg-rose-500/10 text-rose-200' : 'border-sky-500/30 bg-sky-500/10 text-sky-200'}`}>{overdue > 0 ? `${overdue} scaduti` : 'In ordine'}</span>
               </div>
 
-              <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
-                <span>{open} aperti</span>
-                {overdue > 0 && <span className="font-semibold text-rose-300">· {overdue} scaduti</span>}
-                {high > 0 && <span className="text-amber-300">· {high} alta priorità</span>}
-                <span className="ml-auto">{progress}%</span>
-              </div>
-              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-slate-700">
-                <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, backgroundColor: project.color }} />
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="rounded-xl bg-slate-900/75 p-2"><span className="block text-xl font-bold text-white">{open.length}</span><span className="text-slate-500">aperti</span></div>
+                <div className="rounded-xl bg-slate-900/75 p-2"><span className="block text-xl font-bold text-rose-200">{overdue}</span><span className="text-slate-500">scaduti</span></div>
+                <div className="rounded-xl bg-slate-900/75 p-2"><span className="block text-xl font-bold text-violet-200">{waiting}</span><span className="text-slate-500">in attesa</span></div>
               </div>
 
-              <div className="mt-4 flex-1 rounded-xl border border-slate-700/80 bg-slate-900/70 p-3">
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-300">In corso · prossima azione</p>
+              <div className="mt-3 flex-1 rounded-xl border border-slate-700/80 bg-slate-900/70 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-300">Prossima azione</p>
                 {nextAction ? (
-                  <div className="mt-2 flex items-start gap-2">
-                    <button
-                      onClick={() => onToggleTask(nextAction.id)}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-slate-500 text-transparent transition hover:border-emerald-400 hover:bg-emerald-500/10"
-                      aria-label={`Completa ${nextAction.text}`}
-                      title="Completa"
-                    >
-                      ✓
-                    </button>
-                    <button onClick={() => onEditTask(nextAction)} className="min-w-0 flex-1 text-left">
-                      <span className={`mb-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${nextAction.priority === 'high' ? 'bg-rose-500/20 text-rose-200' : 'bg-amber-500/20 text-amber-200'}`}>
-                        {nextAction.priority === 'high' ? 'Alta' : 'Media'}
-                      </span>
-                      <span className="line-clamp-2 block text-sm font-semibold leading-snug text-slate-100 hover:text-white">{nextAction.text}</span>
-                      {getVisibleTaskNotes(nextAction.notes) && <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-slate-400">📝 {getVisibleTaskNotes(nextAction.notes)}</span>}
-                    </button>
-                    <div className="flex shrink-0 flex-col gap-1">
-                      <button onClick={() => onEditTask(nextAction)} className="rounded-md p-1 text-slate-400 hover:bg-blue-500/15 hover:text-blue-300" title="Modifica">✏️</button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm(`Eliminare il task “${nextAction.text}”?`)) void onDeleteTask(nextAction.id);
-                        }}
-                        className="rounded-md p-1 text-slate-500 hover:bg-rose-500/15 hover:text-rose-300"
-                        title="Elimina"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
+                  <button onClick={() => onEditTask(nextAction)} className="mt-2 line-clamp-2 text-left text-sm font-semibold leading-snug text-slate-100 hover:text-white">{nextAction.text}</button>
                 ) : (
-                  <p className="mt-1.5 text-sm text-slate-500">Nessuna attività alta o media</p>
-                )}
-              </div>
-
-              <div className="mt-3 min-h-5 text-xs">
-                {reminder?.remind_at ? (
-                  <button onClick={() => onEditTask(reminder)} className="flex w-full items-center gap-2 text-left text-cyan-200 hover:text-cyan-100">
-                    <span>⏰</span>
-                    <span className="truncate">{formatReminderDate(reminder.remind_at)} · {reminder.text}</span>
-                  </button>
-                ) : (
-                  <span className="text-slate-600">Nessun reminder importante</span>
+                  <p className="mt-1.5 text-sm text-slate-500">Nessuna attività attiva</p>
                 )}
               </div>
             </article>
           ))}
         </div>
+        {areaOverview.length === 0 && <p className="rounded-2xl border border-dashed border-slate-700 p-5 text-sm text-slate-400">Crea o promuovi le quattro macro-aree per completare la mappa.</p>}
       </section>
 
       <section aria-labelledby="overview-metrics">
@@ -1844,138 +1778,23 @@ function OverviewDashboard({
         </div>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,.75fr)]">
-        <section aria-labelledby="daily-focus" className="rounded-2xl border border-slate-700 bg-slate-800/55 p-4 sm:p-5">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 id="daily-focus" className="text-lg font-bold text-white">Focus operativo</h2>
-              <p className="text-sm text-slate-400">Prima le priorità alte, poi le medie. Le basse restano fuori dalla dashboard.</p>
-            </div>
-            <span className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-200">
-              {dashboardTasks.filter(task => task.priority === 'high').length} alte · {dashboardTasks.filter(task => task.priority === 'medium').length} medie
-            </span>
+      <section aria-labelledby="watch-list" className="rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-4 sm:p-5">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">Da non perdere di vista</p>
+            <h2 id="watch-list" className="mt-1 text-xl font-bold text-white">Orizzonte e reminder</h2>
+            <p className="mt-1 text-sm text-slate-400">Attività importanti fuori dalla settimana corrente, promemoria e task ancora senza data.</p>
           </div>
-          {focusTasks.length === 0 ? (
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-emerald-100">
-              Tutto libero: non ci sono attività aperte.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {focusTasks.map(task => {
-                const project = projects.find(item => item.id === task.project_id);
-                const isOverdue = task.due_date && task.due_date < today;
-                return (
-                  <div key={task.id} className="group flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-900/55 p-3 transition hover:border-slate-500">
-                    <button
-                      onClick={() => onToggleTask(task.id)}
-                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-slate-500 text-transparent transition hover:border-emerald-400 hover:bg-emerald-500/10"
-                      aria-label={`Completa ${task.text}`}
-                    >
-                      ✓
-                    </button>
-                    <button onClick={() => onEditTask(task)} className="min-w-0 flex-1 text-left">
-                      <span className="flex items-start gap-2">
-                        <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${task.priority === 'high' ? 'bg-rose-500/20 text-rose-200' : 'bg-amber-500/20 text-amber-200'}`}>
-                          {task.priority === 'high' ? 'Alta' : 'Media'}
-                        </span>
-                        <span className="block font-medium text-slate-100 group-hover:text-white">{task.text}</span>
-                      </span>
-                      <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                        {project && <span style={{ color: project.color }}>{project.emoji} {project.name}</span>}
-                        {task.due_date && (
-                          <span className={isOverdue ? 'font-semibold text-rose-300' : task.due_date === today ? 'font-semibold text-sky-300' : ''}>
-                            {isOverdue ? 'Scaduto · ' : task.due_date === today ? 'Oggi · ' : ''}
-                            {new Date(`${task.due_date}T12:00:00`).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                    <div className="flex shrink-0 gap-1">
-                      <button onClick={() => onEditTask(task)} className="rounded-lg p-2 text-slate-400 hover:bg-blue-500/15 hover:text-blue-300" title="Modifica">✏️</button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm(`Eliminare il task “${task.text}”?`)) void onDeleteTask(task.id);
-                        }}
-                        className="rounded-lg p-2 text-slate-500 hover:bg-rose-500/15 hover:text-rose-300"
-                        title="Elimina"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        <aside className="space-y-4">
-          <section className="rounded-2xl border border-slate-700 bg-slate-800/55 p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-white">Reminder importanti</h2>
-                <p className="text-sm text-slate-400">I prossimi avvisi ancora da gestire.</p>
-              </div>
-            </div>
-            <div className="space-y-3">
-              {importantReminders.map(task => {
-                const project = projects.find(item => item.id === task.project_id);
-                const isLate = task.remind_at ? new Date(task.remind_at) < new Date() : false;
-                return (
-                  <div key={task.id} className="flex items-start gap-2 rounded-xl border border-slate-700 bg-slate-900/45 p-3 transition hover:border-slate-500">
-                    <button
-                      onClick={() => onToggleTask(task.id)}
-                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-slate-500 text-transparent hover:border-emerald-400 hover:bg-emerald-500/10"
-                      aria-label={`Completa ${task.text}`}
-                      title="Completa"
-                    >
-                      ✓
-                    </button>
-                    <button onClick={() => onEditTask(task)} className="min-w-0 flex-1 text-left">
-                      <div className="flex items-start justify-between gap-3">
-                        <span className="line-clamp-2 min-w-0 text-sm font-semibold text-white">{task.text}</span>
-                        <span className={`shrink-0 text-xs font-semibold ${isLate ? 'text-rose-300' : 'text-cyan-200'}`}>
-                          {isLate ? 'Scaduto' : 'Programmato'}
-                        </span>
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-400">
-                        <span>⏰ {task.remind_at && formatReminderDate(task.remind_at)}</span>
-                        {project && <span style={{ color: project.color }}>{project.emoji} {project.name}</span>}
-                      </div>
-                    </button>
-                    <div className="flex shrink-0 flex-col gap-1">
-                      <button onClick={() => onEditTask(task)} className="rounded-md p-1 text-slate-400 hover:text-blue-300" title="Modifica">✏️</button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm(`Eliminare il task “${task.text}”?`)) void onDeleteTask(task.id);
-                        }}
-                        className="rounded-md p-1 text-slate-500 hover:text-rose-300"
-                        title="Elimina"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
-              )})}
-              {importantReminders.length === 0 && <p className="rounded-xl bg-slate-900/40 p-4 text-sm text-slate-400">Nessun reminder programmato.</p>}
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-slate-700 bg-slate-800/55 p-5">
-            <h2 className="font-bold text-white">Da mettere in ordine</h2>
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <button onClick={() => onOpenTasks('unscheduled')} className="rounded-xl bg-slate-900/50 p-3 text-left hover:bg-slate-900">
-                <span className="block text-xl font-bold text-white">{unscheduledTasks.length}</span>
-                <span className="text-xs text-slate-400">senza scadenza</span>
-              </button>
-              <button onClick={() => onOpenTasks('all', null)} className="rounded-xl bg-slate-900/50 p-3 text-left hover:bg-slate-900">
-                <span className="block text-xl font-bold text-white">{unassignedTasks.length}</span>
-                <span className="text-xs text-slate-400">senza progetto</span>
-              </button>
-            </div>
-          </section>
-        </aside>
-      </div>
+          <div className="flex gap-2 text-xs font-semibold">
+            <button onClick={() => onOpenTasks('unscheduled')} className="rounded-full border border-slate-600 bg-slate-900/60 px-3 py-1.5 text-slate-300 hover:border-slate-400">{unscheduledTasks.length} senza data</button>
+            <button onClick={() => onOpenTasks('all', null)} className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-amber-200 hover:border-amber-400">📥 {unassignedTasks.length} in Inbox</button>
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {watchTasks.map(task => renderPriorityTask(task))}
+        </div>
+        {watchTasks.length === 0 && <p className="rounded-xl border border-dashed border-cyan-500/20 p-4 text-sm text-slate-400">Nessuna attività da tenere nel radar.</p>}
+      </section>
     </div>
   );
 }
@@ -2362,6 +2181,7 @@ export default function Home() {
   const totalTasks = visibleTasks.length;
   const completedTasks = visibleTasks.filter(t => t.completed).length;
   const highPriorityTasks = visibleTasks.filter(t => !t.completed && t.priority === 'high').length;
+  const inboxTasks = visibleTasks.filter(task => !task.completed && !task.project_id);
   const selectedProject = selectedProjectId ? projects.find(project => project.id === selectedProjectId) : undefined;
   const selectedProjectTasks = selectedProjectId ? visibleTasks.filter(task => task.project_id === selectedProjectId) : [];
   const selectedProjectOpenTasks = selectedProjectTasks.filter(task => !task.completed).length;
@@ -2503,12 +2323,32 @@ export default function Home() {
                 activeTab === 'overview' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
             >
-              ☀️ Oggi
+              ☀️ Oggi / Urgente
             </button>
             <button
-              onClick={() => setActiveTab('tasks')}
+              onClick={() => {
+                setSelectedProjectId(null);
+                setUnassignedOnly(true);
+                setFilter('active');
+                setTimeFilter('all');
+                setViewMode('list');
+                setActiveTab('tasks');
+              }}
               className={`whitespace-nowrap px-4 py-2 rounded-xl font-semibold transition-colors ${
-                activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                activeTab === 'tasks' && unassignedOnly ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              📥 Inbox <span className="ml-1 rounded-full bg-slate-950/20 px-2 py-0.5 text-xs">{inboxTasks.length}</span>
+            </button>
+            <button
+              onClick={() => {
+                setSelectedProjectId(null);
+                setUnassignedOnly(false);
+                setTimeFilter('all');
+                setActiveTab('tasks');
+              }}
+              className={`whitespace-nowrap px-4 py-2 rounded-xl font-semibold transition-colors ${
+                activeTab === 'tasks' && !unassignedOnly ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
             >
               ✅ Task
@@ -2542,7 +2382,6 @@ export default function Home() {
             onToggleTask={handleToggleTask}
             onEditTask={setEditingTask}
             onUpdateTask={handleUpdateTask}
-            onDeleteTask={handleDeleteTask}
             onOpenTasks={(nextTimeFilter, projectId) => {
               setTaskReturnTab('overview');
               setFilter('active');
@@ -2558,6 +2397,18 @@ export default function Home() {
         
         {activeTab === 'tasks' && (
           <div>
+            {unassignedOnly && (
+              <section className="mb-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 shadow-lg" aria-label="Inbox">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-300">Cattura rapida</p>
+                <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">📥 Inbox</h2>
+                    <p className="mt-1 text-sm text-slate-300">Qui entrano le attività non ancora classificate. Assegna area e progetto quando fai ordine.</p>
+                  </div>
+                  <span className="rounded-full bg-slate-950/30 px-3 py-1.5 text-sm font-semibold text-amber-100">{inboxTasks.length} da classificare</span>
+                </div>
+              </section>
+            )}
             {selectedProject && (
               <section
                 className="mb-5 rounded-2xl border border-slate-700 bg-slate-800/70 p-4 shadow-lg"
@@ -2661,7 +2512,7 @@ export default function Home() {
                 className="bg-slate-800 border-2 border-slate-700 rounded-lg px-3 py-1 text-sm font-medium focus:outline-none text-white"
               >
                 <option value="">{unassignedOnly ? '📋 Senza progetto' : 'Tutti i progetti'}</option>
-                {projects.map(p => (
+                {projects.filter(p => !p.is_area).map(p => (
                   <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
                 ))}
               </select>
@@ -2749,7 +2600,7 @@ export default function Home() {
                     arr.push(t);
                     byProject.set(t.project_id, arr);
                   }
-                  for (const p of projects) {
+                  for (const p of projects.filter(project => !project.is_area)) {
                     const pts = byProject.get(p.id);
                     groups.push({ key: p.id, label: p.name, emoji: p.emoji, color: p.color, tasks: pts ?? [] });
                   }
