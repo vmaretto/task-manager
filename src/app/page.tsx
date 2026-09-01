@@ -41,6 +41,7 @@ const viewerLabels: Record<ViewerProfile, string> = {
 };
 
 const VIEWER_PROFILE_KEY = 'switchboard.viewer-profile';
+const UNASSIGNED_AREA_VALUE = '__unassigned__';
 
 function getTaskAssignee(task: Pick<Task, 'text' | 'notes'>) {
   const storedAssignee = task.notes.match(assigneeNotePattern)?.[1]?.trim();
@@ -83,12 +84,38 @@ function getAreaDisplayName(name: string) {
   return name;
 }
 
+function getAreaRank(name: string) {
+  const normalized = normalizePersonName(name);
+  if (normalized === 'professionista') return 0;
+  if (normalized === 'posti') return 1;
+  if (normalized === 'fib' || normalized === 'food innovation broker') return 2;
+  if (normalized === 'personale') return 3;
+  return 10;
+}
+
 function getProjectArea(project: Project | undefined, projects: Project[]) {
   if (!project) return undefined;
   if (project.is_area) return project;
   return project.parent_project_id
     ? projects.find(candidate => candidate.id === project.parent_project_id && candidate.is_area)
     : undefined;
+}
+
+function getAreaSelectionForProject(projectId: string | null, projects: Project[]) {
+  if (!projectId) return '';
+  const project = projects.find(candidate => candidate.id === projectId);
+  if (!project) return '';
+  if (project.is_area) return project.id;
+  return project.parent_project_id ?? UNASSIGNED_AREA_VALUE;
+}
+
+function getProjectsForArea(areaId: string, projects: Project[]) {
+  if (!areaId) return [];
+  return projects.filter(project => {
+    if (project.is_area) return false;
+    if (areaId === UNASSIGNED_AREA_VALUE) return !project.parent_project_id;
+    return project.parent_project_id === areaId;
+  });
 }
 
 function taskBelongsOnlyToVirgilio(task: Pick<Task, 'text' | 'notes' | 'category'>) {
@@ -763,7 +790,9 @@ function EditTaskModal({
   const [assignee, setAssignee] = useState(initialAssignee);
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>(initialTask.priority);
   const [category, setCategory] = useState<'work' | 'admin' | 'personal' | 'travel'>(initialTask.category);
-  const [projectId, setProjectId] = useState<string | null>(initialTask.project_id);
+  const initialProject = projects.find(project => project.id === initialTask.project_id);
+  const [areaId, setAreaId] = useState(getAreaSelectionForProject(initialTask.project_id, projects));
+  const [projectId, setProjectId] = useState<string | null>(initialProject?.is_area ? null : initialTask.project_id);
   const [dueDate, setDueDate] = useState(initialTask.due_date || '');
   const [remindAt, setRemindAt] = useState(formatReminderForInput(initialTask.remind_at));
   const [reminderChannel, setReminderChannel] = useState<'telegram' | 'email'>(initialTask.reminder_channel ?? 'telegram');
@@ -857,17 +886,38 @@ function EditTaskModal({
           </div>
           
           <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Area</label>
+            <select
+              value={areaId}
+              onChange={(e) => {
+                setAreaId(e.target.value);
+                setProjectId(null);
+              }}
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
+            >
+              <option value="">Nessuna area · Inbox</option>
+              {projects.filter(project => project.is_area).sort((a, b) => getAreaRank(a.name) - getAreaRank(b.name)).map(area => (
+                <option key={area.id} value={area.id}>{area.emoji} {getAreaDisplayName(area.name)}</option>
+              ))}
+              {projects.some(project => !project.is_area && !project.parent_project_id) && (
+                <option value={UNASSIGNED_AREA_VALUE}>◌ Senza area</option>
+              )}
+            </select>
+          </div>
+
+          <div>
             <label className="block text-sm text-slate-300 mb-1 font-medium">Progetto</label>
             <select
               value={projectId || ''}
               onChange={(e) => setProjectId(e.target.value || null)}
-              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
+              disabled={!areaId}
+              required={Boolean(areaId)}
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <option value="">Nessun progetto</option>
-              {projects.filter(p => !p.is_area).map(p => {
-                const area = getProjectArea(p, projects);
-                return <option key={p.id} value={p.id}>{area ? `${getAreaDisplayName(area.name)} → ` : 'Senza area → '}{p.emoji} {p.name}</option>;
-              })}
+              <option value="">{areaId ? 'Seleziona un progetto' : 'Seleziona prima un’area'}</option>
+              {getProjectsForArea(areaId, projects).map(project => (
+                <option key={project.id} value={project.id}>{project.emoji} {project.name}</option>
+              ))}
             </select>
           </div>
 
@@ -1008,11 +1058,14 @@ function AddTaskModal({
   pinnedTasks: Task[];
   onUnpinTask: (taskId: string) => void | Promise<void>;
 }) {
+  const defaultProject = projects.find(project => project.id === defaultProjectId);
+  const defaultAreaId = getAreaSelectionForProject(defaultProjectId, projects);
   const [text, setText] = useState('');
   const [notes, setNotes] = useState('');
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [category, setCategory] = useState<'work' | 'admin' | 'personal' | 'travel'>('work');
-  const [projectId, setProjectId] = useState<string | null>(defaultProjectId);
+  const [areaId, setAreaId] = useState(defaultAreaId);
+  const [projectId, setProjectId] = useState<string | null>(defaultProject?.is_area ? null : defaultProjectId);
   const [assignee, setAssignee] = useState(defaultAssignee);
   const [dueDate, setDueDate] = useState('');
   const [remindAt, setRemindAt] = useState('');
@@ -1045,7 +1098,8 @@ function AddTaskModal({
       setNotes('');
       setPriority('medium');
       setCategory('work');
-      setProjectId(null);
+      setAreaId(defaultAreaId);
+      setProjectId(defaultProject?.is_area ? null : defaultProjectId);
       setAssignee(defaultAssignee);
       setDueDate('');
       setRemindAt('');
@@ -1118,17 +1172,38 @@ function AddTaskModal({
           </div>
           
           <div>
+            <label className="block text-sm text-slate-300 mb-1 font-medium">Area</label>
+            <select
+              value={areaId}
+              onChange={(e) => {
+                setAreaId(e.target.value);
+                setProjectId(null);
+              }}
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
+            >
+              <option value="">Nessuna area · Inbox</option>
+              {projects.filter(project => project.is_area).sort((a, b) => getAreaRank(a.name) - getAreaRank(b.name)).map(area => (
+                <option key={area.id} value={area.id}>{area.emoji} {getAreaDisplayName(area.name)}</option>
+              ))}
+              {projects.some(project => !project.is_area && !project.parent_project_id) && (
+                <option value={UNASSIGNED_AREA_VALUE}>◌ Senza area</option>
+              )}
+            </select>
+          </div>
+
+          <div>
             <label className="block text-sm text-slate-300 mb-1 font-medium">Progetto</label>
             <select
               value={projectId || ''}
               onChange={(e) => setProjectId(e.target.value || null)}
-              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
+              disabled={!areaId}
+              required={Boolean(areaId)}
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <option value="">Nessun progetto</option>
-              {projects.filter(p => !p.is_area).map(p => {
-                const area = getProjectArea(p, projects);
-                return <option key={p.id} value={p.id}>{area ? `${getAreaDisplayName(area.name)} → ` : 'Senza area → '}{p.emoji} {p.name}</option>;
-              })}
+              <option value="">{areaId ? 'Seleziona un progetto' : 'Seleziona prima un’area'}</option>
+              {getProjectsForArea(areaId, projects).map(project => (
+                <option key={project.id} value={project.id}>{project.emoji} {project.name}</option>
+              ))}
             </select>
           </div>
 
@@ -1582,17 +1657,9 @@ function OverviewDashboard({
     })
     .slice(0, 6);
 
-  const areaRank = (name: string) => {
-    const normalized = normalizePersonName(name);
-    if (normalized === 'professionista') return 0;
-    if (normalized === 'posti') return 1;
-    if (normalized === 'fib' || normalized === 'food innovation broker') return 2;
-    if (normalized === 'personale') return 3;
-    return 10;
-  };
   const areaOverview = projects
     .filter(project => project.is_area)
-    .sort((a, b) => areaRank(a.name) - areaRank(b.name) || a.sort_order - b.sort_order || a.name.localeCompare(b.name, 'it'))
+    .sort((a, b) => getAreaRank(a.name) - getAreaRank(b.name) || a.sort_order - b.sort_order || a.name.localeCompare(b.name, 'it'))
     .map(area => {
       const childProjects = projects.filter(project => !project.is_area && project.parent_project_id === area.id);
       const projectIds = new Set([area.id, ...childProjects.map(project => project.id)]);
