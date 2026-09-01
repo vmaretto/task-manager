@@ -76,6 +76,21 @@ function normalizePersonName(value: string) {
     .toLowerCase();
 }
 
+function getAreaDisplayName(name: string) {
+  const normalized = normalizePersonName(name);
+  if (normalized === 'posti') return 'pOsti';
+  if (normalized === 'fib') return 'Food Innovation Broker';
+  return name;
+}
+
+function getProjectArea(project: Project | undefined, projects: Project[]) {
+  if (!project) return undefined;
+  if (project.is_area) return project;
+  return project.parent_project_id
+    ? projects.find(candidate => candidate.id === project.parent_project_id && candidate.is_area)
+    : undefined;
+}
+
 function taskBelongsOnlyToVirgilio(task: Pick<Task, 'text' | 'notes' | 'category'>) {
   const assignee = normalizePersonName(getTaskAssignee(task));
   const mentionsVirgilio = /\b(virgilio|maretto)\b/.test(assignee);
@@ -200,6 +215,7 @@ function TaskItem({
 }) {
   const [isToggling, setIsToggling] = useState(false);
   const project = projects.find(p => p.id === task.project_id);
+  const area = getProjectArea(project, projects);
   const assignee = getTaskAssignee(task);
   const visibleNotes = getVisibleTaskNotes(task.notes);
   
@@ -305,6 +321,12 @@ function TaskItem({
             )}
             
             {project && (
+              <span className="text-xs px-2 py-1 rounded-md border border-blue-500/35 bg-blue-500/10 font-medium text-blue-200">
+                {area ? `${area.emoji} ${getAreaDisplayName(area.name)}` : '◌ Senza area'}
+              </span>
+            )}
+
+            {project && !project.is_area && (
               <span 
                 className="text-xs px-2 py-1 rounded-md font-medium"
                 style={{ backgroundColor: `${project.color}30`, color: project.color, border: `1px solid ${project.color}60` }}
@@ -842,9 +864,10 @@ function EditTaskModal({
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
             >
               <option value="">Nessun progetto</option>
-              {projects.filter(p => !p.is_area).map(p => (
-                <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
-              ))}
+              {projects.filter(p => !p.is_area).map(p => {
+                const area = getProjectArea(p, projects);
+                return <option key={p.id} value={p.id}>{area ? `${getAreaDisplayName(area.name)} → ` : 'Senza area → '}{p.emoji} {p.name}</option>;
+              })}
             </select>
           </div>
 
@@ -1102,9 +1125,10 @@ function AddTaskModal({
               className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none"
             >
               <option value="">Nessun progetto</option>
-              {projects.filter(p => !p.is_area).map(p => (
-                <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
-              ))}
+              {projects.filter(p => !p.is_area).map(p => {
+                const area = getProjectArea(p, projects);
+                return <option key={p.id} value={p.id}>{area ? `${getAreaDisplayName(area.name)} → ` : 'Senza area → '}{p.emoji} {p.name}</option>;
+              })}
             </select>
           </div>
 
@@ -1566,12 +1590,6 @@ function OverviewDashboard({
     if (normalized === 'personale') return 3;
     return 10;
   };
-  const areaDisplayName = (name: string) => {
-    const normalized = normalizePersonName(name);
-    if (normalized === 'posti') return 'pOsti';
-    if (normalized === 'fib') return 'Food Innovation Broker';
-    return name;
-  };
   const areaOverview = projects
     .filter(project => project.is_area)
     .sort((a, b) => areaRank(a.name) - areaRank(b.name) || a.sort_order - b.sort_order || a.name.localeCompare(b.name, 'it'))
@@ -1612,6 +1630,7 @@ function OverviewDashboard({
 
   const renderPriorityTask = (task: Task, prominent = false) => {
     const project = projects.find(item => item.id === task.project_id);
+    const area = getProjectArea(project, projects);
     const assignee = getTaskAssignee(task);
     const notes = getVisibleTaskNotes(task.notes);
     const waiting = task.workflow_status === 'waiting';
@@ -1644,7 +1663,16 @@ function OverviewDashboard({
           </button>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-700/70 pt-3 text-xs">
-          <span className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-slate-300">{project ? `${project.emoji} ${project.name}` : '◌ Senza progetto'}</span>
+          {project ? (
+            <>
+              <span className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-2.5 py-1.5 text-blue-200">
+                {area ? `${area.emoji} ${getAreaDisplayName(area.name)}` : '◌ Senza area'}
+              </span>
+              {!project.is_area && <span className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-slate-300">{project.emoji} {project.name}</span>}
+            </>
+          ) : (
+            <span className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-slate-300">◌ Inbox · Senza progetto</span>
+          )}
           <span className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-slate-300">{assignee ? `👤 ${assignee}` : '👤 Non assegnato'}</span>
           <div className="ml-auto flex gap-1.5">
             <button
@@ -1732,7 +1760,7 @@ function OverviewDashboard({
             >
               <div className="flex items-start justify-between gap-3">
                 <button onClick={onOpenProjects} className="min-w-0 text-left">
-                  <span className="block text-lg font-bold text-white">{area.emoji} {areaDisplayName(area.name)}</span>
+                  <span className="block text-lg font-bold text-white">{area.emoji} {getAreaDisplayName(area.name)}</span>
                   <span className="mt-1 block text-xs text-slate-400">{childProjects.length} progetti/filoni</span>
                 </button>
                 <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${overdue > 0 ? 'border-rose-500/35 bg-rose-500/10 text-rose-200' : 'border-sky-500/30 bg-sky-500/10 text-sky-200'}`}>{overdue > 0 ? `${overdue} scaduti` : 'In ordine'}</span>
@@ -2512,9 +2540,10 @@ export default function Home() {
                 className="bg-slate-800 border-2 border-slate-700 rounded-lg px-3 py-1 text-sm font-medium focus:outline-none text-white"
               >
                 <option value="">{unassignedOnly ? '📋 Senza progetto' : 'Tutti i progetti'}</option>
-                {projects.filter(p => !p.is_area).map(p => (
-                  <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>
-                ))}
+                {projects.filter(p => !p.is_area).map(p => {
+                  const area = getProjectArea(p, projects);
+                  return <option key={p.id} value={p.id}>{area ? `${getAreaDisplayName(area.name)} → ` : 'Senza area → '}{p.emoji} {p.name}</option>;
+                })}
               </select>
 
               <div className="flex bg-slate-800 rounded-lg p-1 border-2 border-slate-700">
@@ -2602,7 +2631,14 @@ export default function Home() {
                   }
                   for (const p of projects.filter(project => !project.is_area)) {
                     const pts = byProject.get(p.id);
-                    groups.push({ key: p.id, label: p.name, emoji: p.emoji, color: p.color, tasks: pts ?? [] });
+                    const area = getProjectArea(p, projects);
+                    groups.push({
+                      key: p.id,
+                      label: `${area ? getAreaDisplayName(area.name) : 'Senza area'} → ${p.name}`,
+                      emoji: p.emoji,
+                      color: p.color,
+                      tasks: pts ?? [],
+                    });
                   }
                   const noProject = byProject.get(null);
                   groups.push({ key: '__none__', label: 'Senza progetto', emoji: '📋', color: '#64748b', tasks: noProject ?? [] });
