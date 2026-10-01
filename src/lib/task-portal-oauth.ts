@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
+import { FULL_SCOPE, normalizeScope } from '@/lib/oauth-scope';
 import { getVoiceServerClient } from '@/lib/voice-task-server';
 
 const origin = 'https://task-manager-dusky-chi-88.vercel.app';
@@ -61,7 +62,22 @@ export async function registerOAuthClient(redirectUris: unknown) {
   return { client_id: clientId, redirect_uris: redirectUris, token_endpoint_auth_method: 'none' };
 }
 
-export async function issueAuthorizationCode(clientId: string, redirectUri: string, challenge: string) {
+// The granted scope travels inside the authorization code, signed, so no schema change is needed.
+function scopeSignature(nonce: string, scope: string) {
+  return createHmac('sha256', signingSecret()).update('scope.' + nonce + '.' + scope).digest('base64url');
+}
+
+function scopeFromCode(code: string) {
+  const parts = code.slice(4).split('.');
+  if (parts.length !== 3) return FULL_SCOPE; // codes issued before scopes were enforced
+  const [nonce, encoded, signature] = parts;
+  const scope = Buffer.from(encoded, 'base64url').toString('utf8');
+  const expected = scopeSignature(nonce, scope);
+  if (signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) throw new Error('Codice OAuth non valido.');
+  return normalizeScope(scope);
+}
+
+export async function issueAuthorizationCode(clientId: string, redirectUri: string, challenge: string, requestedScope?: string | null) {
   const supabase = getVoiceServerClient();
   if (!isValidOAuthClientRequest(clientId, redirectUri) || !challenge) throw new Error('Richiesta OAuth incompleta.');
   // ChatGPT can use either Dynamic Client Registration or Client ID Metadata.
@@ -72,7 +88,9 @@ export async function issueAuthorizationCode(clientId: string, redirectUri: stri
     .from('mcp_oauth_clients')
     .upsert({ client_id: clientId, redirect_uris: [redirectUri] }, { onConflict: 'client_id' });
   if (clientError) throw new Error('Registrazione del client non disponibile.');
-  const code = 'mtc_' + randomBytes(32).toString('base64url');
+  const scope = normalizeScope(requestedScope);
+  const nonce = randomBytes(32).toString('base64url');
+  const code = 'mtc_' + nonce + '.' + Buffer.from(scope).toString('base64url') + '.' + scopeSignature(nonce, scope);
   const { error } = await supabase.from('mcp_oauth_codes').insert({ code_hash: digest(code), client_id: clientId, redirect_uri: redirectUri, code_challenge: challenge, expires_at: new Date(Date.now() + 300000).toISOString() });
   if (error) throw new Error('Non riesco a creare l’autorizzazione.');
   return code;
@@ -91,23 +109,31 @@ export async function exchangeAuthorizationCode(code: string, clientId: string, 
   const supabase = getVoiceServerClient();
   const { data } = await supabase.from('mcp_oauth_codes').select('*').eq('code_hash', digest(code)).maybeSingle();
   if (!data || data.used_at || data.client_id !== clientId || data.redirect_uri !== redirectUri || data.code_challenge !== digest(verifier) || new Date(data.expires_at).getTime() < Date.now()) throw new Error('Codice OAuth non valido.');
+  const scope = scopeFromCode(code);
   const { data: used } = await supabase.from('mcp_oauth_codes').update({ used_at: new Date().toISOString() }).eq('id', data.id).is('used_at', null).select('id').maybeSingle();
   if (!used) throw new Error('Codice OAuth già usato.');
   const now = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-  const payload = Buffer.from(JSON.stringify({ iss: origin, aud: resource, sub: 'virgilio', scope: 'tasks:read tasks:write', iat: now, exp: now + 2592000 })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ iss: origin, aud: resource, sub: 'virgilio', scope, iat: now, exp: now + 2592000 })).toString('base64url');
   const signature = createHmac('sha256', signingSecret()).update(header + '.' + payload).digest('base64url');
-  return header + '.' + payload + '.' + signature;
+  return { accessToken: header + '.' + payload + '.' + signature, scope };
+}
+
+// Returns the token's scope when the token is valid, null otherwise. Tokens issued before
+// scopes were enforced carry 'tasks:read tasks:write' and keep working unchanged.
+export function readOAuthAccessToken(value: string | null): { scope: string } | null {
+  if (!value) return null;
+  const parts = value.split('.');
+  if (parts.length !== 3) return null;
+  const expected = createHmac('sha256', signingSecret()).update(parts[0] + '.' + parts[1]).digest('base64url');
+  if (parts[2].length !== expected.length || !timingSafeEqual(Buffer.from(parts[2]), Buffer.from(expected))) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as { iss?: string; aud?: string; exp?: number; scope?: string };
+    if (claims.iss !== origin || claims.aud !== resource || typeof claims.exp !== 'number' || claims.exp * 1000 <= Date.now()) return null;
+    return { scope: typeof claims.scope === 'string' ? claims.scope : FULL_SCOPE };
+  } catch { return null; }
 }
 
 export function isOAuthAccessToken(value: string | null) {
-  if (!value) return false;
-  const parts = value.split('.');
-  if (parts.length !== 3) return false;
-  const expected = createHmac('sha256', signingSecret()).update(parts[0] + '.' + parts[1]).digest('base64url');
-  if (!timingSafeEqual(Buffer.from(parts[2]), Buffer.from(expected))) return false;
-  try {
-    const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as { iss?: string; aud?: string; exp?: number };
-    return claims.iss === origin && claims.aud === resource && typeof claims.exp === 'number' && claims.exp * 1000 > Date.now();
-  } catch { return false; }
+  return readOAuthAccessToken(value) !== null;
 }

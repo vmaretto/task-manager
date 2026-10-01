@@ -95,7 +95,9 @@ function presentTask(task: Record<string, unknown>, projectNames: Map<string, st
   };
 }
 
-export function createTaskPortalMcpServer() {
+// A read-only token (scope tasks:read) gets list_projects and list_tasks only: the write tools
+// are not registered at all, so they are neither listed nor callable.
+export function createTaskPortalMcpServer({ canWrite = true }: { canWrite?: boolean } = {}) {
   const server = new McpServer(
     { name: 'task-portal', version: '1.0.0' },
     {
@@ -176,6 +178,8 @@ export function createTaskPortalMcpServer() {
       return textResult({ workflow_available: workflowAvailable, tasks: filtered.map(task => presentTask(task, projectNames)) });
     },
   );
+
+  if (!canWrite) return server;
 
   server.registerTool(
     'create_task',
