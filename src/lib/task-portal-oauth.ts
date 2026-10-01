@@ -23,7 +23,7 @@ export function oauthMetadata() {
     token_endpoint: origin + '/api/oauth/token',
     registration_endpoint: origin + '/api/oauth/register',
     response_types_supported: ['code'],
-    grant_types_supported: ['authorization_code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
     token_endpoint_auth_methods_supported: ['none'],
   };
@@ -63,16 +63,19 @@ export async function registerOAuthClient(redirectUris: unknown) {
 }
 
 // The granted scope travels inside the authorization code, signed, so no schema change is needed.
-function scopeSignature(nonce: string, scope: string) {
-  return createHmac('sha256', signingSecret()).update('scope.' + nonce + '.' + scope).digest('base64url');
+function scopeSignature(nonce: string, scope: string, kind = 'scope') {
+  return createHmac('sha256', signingSecret()).update(kind + '.' + nonce + '.' + scope).digest('base64url');
 }
 
-function scopeFromCode(code: string) {
+function scopeFromCode(code: string, kind = 'scope') {
   const parts = code.slice(4).split('.');
-  if (parts.length !== 3) return FULL_SCOPE; // codes issued before scopes were enforced
+  if (parts.length !== 3) {
+    if (kind === 'scope') return FULL_SCOPE; // codes issued before scopes were enforced
+    throw new Error('Refresh token non valido.');
+  }
   const [nonce, encoded, signature] = parts;
   const scope = Buffer.from(encoded, 'base64url').toString('utf8');
-  const expected = scopeSignature(nonce, scope);
+  const expected = scopeSignature(nonce, scope, kind);
   if (signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) throw new Error('Codice OAuth non valido.');
   return normalizeScope(scope);
 }
@@ -108,15 +111,52 @@ function isValidOAuthClientRequest(clientId: string, redirectUri: string) {
 export async function exchangeAuthorizationCode(code: string, clientId: string, redirectUri: string, verifier: string) {
   const supabase = getVoiceServerClient();
   const { data } = await supabase.from('mcp_oauth_codes').select('*').eq('code_hash', digest(code)).maybeSingle();
+  if (!code.startsWith('mtc_')) throw new Error('Codice OAuth non valido.');
   if (!data || data.used_at || data.client_id !== clientId || data.redirect_uri !== redirectUri || data.code_challenge !== digest(verifier) || new Date(data.expires_at).getTime() < Date.now()) throw new Error('Codice OAuth non valido.');
   const scope = scopeFromCode(code);
   const { data: used } = await supabase.from('mcp_oauth_codes').update({ used_at: new Date().toISOString() }).eq('id', data.id).is('used_at', null).select('id').maybeSingle();
   if (!used) throw new Error('Codice OAuth già usato.');
+  return issueTokens(clientId, redirectUri, scope);
+}
+
+const ACCESS_TOKEN_SECONDS = 2592000; // 30 giorni
+const REFRESH_TOKEN_MS = 180 * 86400000; // 180 giorni, rinnovati a ogni uso
+const REFRESH_MARKER = 'refresh_token';
+
+function signAccessToken(scope: string) {
   const now = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-  const payload = Buffer.from(JSON.stringify({ iss: origin, aud: resource, sub: 'virgilio', scope, iat: now, exp: now + 2592000 })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ iss: origin, aud: resource, sub: 'virgilio', scope, iat: now, exp: now + ACCESS_TOKEN_SECONDS })).toString('base64url');
   const signature = createHmac('sha256', signingSecret()).update(header + '.' + payload).digest('base64url');
-  return { accessToken: header + '.' + payload + '.' + signature, scope };
+  return header + '.' + payload + '.' + signature;
+}
+
+// Refresh tokens live in mcp_oauth_codes (code_challenge = 'refresh_token'), so they can be
+// revoked by deleting the row. Each one is single-use: refreshing rotates it, and the client
+// keeps working without a new approval as long as it refreshes within 180 days.
+async function issueTokens(clientId: string, redirectUri: string, scope: string) {
+  const nonce = randomBytes(32).toString('base64url');
+  const refreshToken = 'mtr_' + nonce + '.' + Buffer.from(scope).toString('base64url') + '.' + scopeSignature(nonce, scope, 'refresh');
+  const { error } = await getVoiceServerClient().from('mcp_oauth_codes').insert({
+    code_hash: digest(refreshToken),
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    code_challenge: REFRESH_MARKER,
+    expires_at: new Date(Date.now() + REFRESH_TOKEN_MS).toISOString(),
+  });
+  if (error) throw new Error('Non riesco a creare il rinnovo del token.');
+  return { accessToken: signAccessToken(scope), refreshToken, scope, expiresIn: ACCESS_TOKEN_SECONDS };
+}
+
+export async function refreshAccessToken(refreshToken: string, clientId: string) {
+  if (!refreshToken.startsWith('mtr_')) throw new Error('Refresh token non valido.');
+  const supabase = getVoiceServerClient();
+  const { data } = await supabase.from('mcp_oauth_codes').select('*').eq('code_hash', digest(refreshToken)).maybeSingle();
+  if (!data || data.code_challenge !== REFRESH_MARKER || data.used_at || (clientId && data.client_id !== clientId) || new Date(data.expires_at).getTime() < Date.now()) throw new Error('Refresh token non valido.');
+  const scope = scopeFromCode(refreshToken, 'refresh');
+  const { data: used } = await supabase.from('mcp_oauth_codes').update({ used_at: new Date().toISOString() }).eq('id', data.id).is('used_at', null).select('id').maybeSingle();
+  if (!used) throw new Error('Refresh token già usato.');
+  return issueTokens(data.client_id, data.redirect_uri, scope);
 }
 
 // Returns the token's scope when the token is valid, null otherwise. Tokens issued before

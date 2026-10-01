@@ -29,7 +29,7 @@ function renderPage({ clientId, redirectUri, state, challenge, scope }: Request_
     + '<p>Un\'applicazione chiede di accedere al Task Portal di Virgilio.</p>'
     + '<p style="color:#555">Richiesta da: <strong>' + escapeAttribute(hostOf(redirectUri)) + '</strong><br><span style="font-size:12px">client ' + escapeAttribute(clientId.slice(0, 80)) + '</span></p>'
     + '<p>Potrà:</p><ul>' + permissions + '</ul>'
-    + '<p style="font-size:12px;color:#555">Permessi richiesti: ' + escapeAttribute(scope) + '. Il token vale 30 giorni.</p>'
+    + '<p style="font-size:12px;color:#555">Permessi richiesti: ' + escapeAttribute(scope) + '. Il collegamento si rinnova da solo e resta attivo finché viene usato almeno una volta ogni 180 giorni.</p>'
     + (error ? '<p style="color:#b42318">' + escapeAttribute(error) + '</p>' : '')
     + '<form method="post"><input type="password" name="approval_secret" placeholder="Codice di autorizzazione" required autofocus style="width:100%;box-sizing:border-box;padding:12px">'
     + '<input type="hidden" name="client_id" value="' + escapeAttribute(clientId) + '">'
